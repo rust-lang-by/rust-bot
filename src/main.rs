@@ -2,13 +2,17 @@ use teloxide::prelude::*;
 
 #[tokio::main]
 async fn main() {
-    teloxide::enable_logging!();
-    log::info!("Starting dices_bot...");
+    run().await;
+}
 
-    let bot = Bot::from_env();
+async fn run() {
+    teloxide::enable_logging!();
+    log::info!("Starting bot...");
+
+    let bot = Bot::from_env().send();
 
     teloxide::repl(bot, |message| async move {
-        message.answer_dice().send().await?;
+        message.answer_dice().await?;
         respond(())
     })
         .await;
