@@ -1,16 +1,15 @@
 #[macro_use]
 extern crate lazy_static;
 
+use regex::Regex;
 use teloxide::prelude::*;
 use teloxide::types::InputFile;
-use regex::Regex;
 
 const STICKER_ID: &str = "CAACAgEAAxkBAAOrYGoytP93yNKPRS6jo39dCGmuXnUAAlcBAAJpejEFk0uf6g86yKAeBA";
 
 lazy_static! {
     static ref RE: Regex = Regex::new(r"\b[RrРр][AaUuАа][CcSsСс][TtТт]\b").unwrap();
 }
-
 
 #[tokio::main]
 async fn main() {
@@ -27,11 +26,12 @@ async fn run() {
         let input_message = message.update.text().unwrap();
 
         if RE.is_match(input_message) {
-            message.answer(
-                format!(
+            message
+                .answer(format!(
                     "Hi, Name! You just wrote smth about Rust! \nBe careful, \
                          X days since last incident."
-                )).await?;
+                ))
+                .await?;
         }
 
         message
@@ -39,6 +39,5 @@ async fn run() {
             .await?;
         respond(())
     })
-        .await;
+    .await;
 }
-
