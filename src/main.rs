@@ -24,19 +24,19 @@ async fn run() {
     teloxide::enable_logging!();
     log::info!("Starting bot...");
 
-    let mut last_date: DateTime<Utc> = Utc::now();
-    log::info!("last date: {}", last_date);
+    let mut last_update: DateTime<Utc> = Utc::now();
+    log::info!("last date: {}", last_update);
 
     let bot = Bot::from_env().auto_send();
 
-    teloxide::repl(bot, |message| async move {
+    teloxide::repl(bot, move |message| async move {
         let input_message = message.update.text().unwrap();
 
         if RE.is_match(input_message) {
             let message_date = message.update.date;
             let curr_native_date = NaiveDateTime::from_timestamp(*&message_date as i64, 0);
             let curr_date: DateTime<Utc> = DateTime::from_utc(curr_native_date, Utc);
-            let time_diff = curr_date.signed_duration_since(last_date);
+            let time_diff = curr_date.signed_duration_since(last_update);
             let username = message.update.from().unwrap().username.as_ref();
 
             message
