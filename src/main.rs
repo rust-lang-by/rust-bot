@@ -1,8 +1,11 @@
+mod mention_repository;
+
 #[macro_use]
 extern crate lazy_static;
 
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use regex::Regex;
+use sqlx::PgPool;
 use teloxide::prelude::*;
 use teloxide::types::InputFile;
 
@@ -29,6 +32,17 @@ async fn run() {
     log::info!("last date: {}", last_update);
 
     let bot = Bot::from_env().auto_send();
+
+    let pool = mention_repository::establish_connection()
+        .await
+        .expect("Can't establish connection");
+
+    let row: (NaiveDateTime,) =
+        sqlx::query_as("SELECT updated_at FROM mentions ORDER BY updated_at DESC LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    log::info!("latest mention time: {}", row.0);
 
     teloxide::repl(bot, move |message| async move {
         let input_message = message.update.text().unwrap();

@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS mentions
+(
+    user_id BIGSERIAL PRIMARY KEY,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
