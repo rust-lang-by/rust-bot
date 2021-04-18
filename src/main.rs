@@ -1,7 +1,9 @@
+mod mention_repository;
+
 #[macro_use]
 extern crate lazy_static;
 
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use regex::Regex;
 use teloxide::prelude::*;
 use teloxide::types::InputFile;
@@ -25,10 +27,19 @@ async fn main() {
 async fn run() {
     teloxide::enable_logging!();
     log::info!("Starting bot...");
-    let mut last_update: DateTime<Utc> = Utc::now();
-    log::info!("last date: {}", last_update);
 
     let bot = Bot::from_env().auto_send();
+
+    let pool = mention_repository::establish_connection()
+        .await
+        .expect("Can't establish connection");
+
+    // pool the latest mention time during app initialization
+    let last_mention_time = mention_repository::lead_earliest_mention_time(&pool)
+        .await
+        .unwrap();
+    let mut last_update_time = Utc.from_utc_datetime(&last_mention_time);
+    log::info!("latest mention time: {}", last_update_time);
 
     teloxide::repl(bot, move |message| async move {
         let input_message = message.update.text().unwrap();
@@ -39,7 +50,7 @@ async fn run() {
             log::info!("curr_native_date: {}", curr_native_date);
             let curr_date = DateTime::from_utc(curr_native_date, Utc);
             log::info!("curr_date: {}", curr_date);
-            let time_diff = curr_date.signed_duration_since(last_update);
+            let time_diff = curr_date.signed_duration_since(last_update_time);
             log::info!("time_diff: {}", time_diff);
 
             if time_diff > *REQ_TIME_DIFF {
@@ -56,14 +67,16 @@ async fn run() {
                     ))
                     .await?;
 
-                last_update = curr_date;
+                last_update_time = curr_date;
             }
         }
 
-        log::info!("last date second: {}", last_update);
+        log::info!("last date second: {}", last_update_time);
         message
             .answer_sticker(InputFile::file_id(STICKER_ID))
             .await?;
+
+        // TODO: insert new mention
         respond(())
     })
     .await;
