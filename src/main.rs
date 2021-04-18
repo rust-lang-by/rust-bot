@@ -54,13 +54,14 @@ async fn run() {
             log::info!("time_diff: {}", time_diff);
 
             if time_diff > *REQ_TIME_DIFF {
-                let username = message.update.from().unwrap().username.as_ref();
+                let user = message.update.from().unwrap();
+                let username = user.username.as_ref().unwrap();
 
                 message
                     .answer(format!(
                         "Hi, {}! You just wrote smth about Rust! \nBe careful, \
                     {}d:{}h:{}m since last incident.",
-                        username.unwrap(),
+                        username,
                         time_diff.num_days(),
                         time_diff.num_hours() % HOURS_PER_DAY,
                         time_diff.num_minutes() % MINUTES_PER_HOUR
@@ -68,6 +69,8 @@ async fn run() {
                     .await?;
 
                 last_update_time = curr_date;
+                // TODO: fix async insert
+                // mention_repository::insert_mention(&pool, user.id);
             }
         }
 
@@ -76,7 +79,6 @@ async fn run() {
             .answer_sticker(InputFile::file_id(STICKER_ID))
             .await?;
 
-        // TODO: insert new mention
         respond(())
     })
     .await;
