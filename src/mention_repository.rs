@@ -14,10 +14,9 @@ pub async fn lead_earliest_mention_time(pool: &PgPool) -> Result<NaiveDateTime, 
         .map(|row: (NaiveDateTime,)| row.0)
 }
 
-pub async fn insert_mention(pool: &PgPool, user_id: i64) -> Result<i64, Error> {
-    sqlx::query_as("INSERT INTO mentions(user_id) VALUES ($1) RETURNING id")
+pub async fn insert_mention(pool: &PgPool, user_id: i64) -> Result<(i64,), Error> {
+    sqlx::query_as("INSERT INTO mentions(user_id) VALUES ($1)  ON CONFLICT (user_id) DO UPDATE SET updated_at = current_timestamp RETURNING user_id")
         .bind(user_id)
         .fetch_one(pool)
         .await
-        .map(|row: (i64,)| row.0)
 }

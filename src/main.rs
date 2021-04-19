@@ -41,45 +41,48 @@ async fn run() {
     let mut last_update_time = Utc.from_utc_datetime(&last_mention_time);
     log::info!("latest mention time: {}", last_update_time);
 
-    teloxide::repl(bot, move |message| async move {
-        let input_message = message.update.text().unwrap();
+    teloxide::repl(bot, move |message| {
+        let cloned_pool = pool.clone();
+        async move {
+            let input_message = message.update.text().unwrap();
 
-        if RE.is_match(input_message) {
-            let message_date = message.update.date;
-            let curr_native_date = NaiveDateTime::from_timestamp(*&message_date as i64, 0);
-            log::info!("curr_native_date: {}", curr_native_date);
-            let curr_date = DateTime::from_utc(curr_native_date, Utc);
-            log::info!("curr_date: {}", curr_date);
-            let time_diff = curr_date.signed_duration_since(last_update_time);
-            log::info!("time_diff: {}", time_diff);
+            if RE.is_match(input_message) {
+                let message_date = message.update.date;
+                let curr_native_date = NaiveDateTime::from_timestamp(*&message_date as i64, 0);
+                log::info!("curr_native_date: {}", curr_native_date);
+                let curr_date = DateTime::from_utc(curr_native_date, Utc);
+                log::info!("curr_date: {}", curr_date);
+                let time_diff = curr_date.signed_duration_since(last_update_time);
+                log::info!("time_diff: {}", time_diff);
 
-            if time_diff > *REQ_TIME_DIFF {
-                let user = message.update.from().unwrap();
-                let username = user.username.as_ref().unwrap();
+                if time_diff > *REQ_TIME_DIFF {
+                    let user = message.update.from().unwrap();
+                    let username = user.username.as_ref().unwrap();
 
-                message
-                    .answer(format!(
-                        "Hi, {}! You just wrote smth about Rust! \nBe careful, \
+                    message
+                        .answer(format!(
+                            "Hi, {}! You just wrote smth about Rust! \nBe careful, \
                     {}d:{}h:{}m since last incident.",
-                        username,
-                        time_diff.num_days(),
-                        time_diff.num_hours() % HOURS_PER_DAY,
-                        time_diff.num_minutes() % MINUTES_PER_HOUR
-                    ))
-                    .await?;
+                            username,
+                            time_diff.num_days(),
+                            time_diff.num_hours() % HOURS_PER_DAY,
+                            time_diff.num_minutes() % MINUTES_PER_HOUR
+                        ))
+                        .await?;
 
-                last_update_time = curr_date;
-                // TODO: fix async insert
-                // mention_repository::insert_mention(&pool, user.id);
+                    message
+                        .answer_sticker(InputFile::file_id(STICKER_ID))
+                        .await?;
+
+                    last_update_time = curr_date;
+                    mention_repository::insert_mention(&cloned_pool, user.id);
+                }
             }
+
+            log::info!("last date second: {}", last_update_time);
+
+            respond(())
         }
-
-        log::info!("last date second: {}", last_update_time);
-        message
-            .answer_sticker(InputFile::file_id(STICKER_ID))
-            .await?;
-
-        respond(())
     })
     .await;
 }
