@@ -5,6 +5,8 @@ extern crate lazy_static;
 
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use regex::Regex;
+use sqlx::{Error, PgPool, Pool, Postgres};
+use std::env;
 use teloxide::prelude::*;
 use teloxide::types::InputFile;
 
@@ -17,6 +19,10 @@ const RUST_REGEX: &str = r"\b[RrРр][AaUuАа][CcSsСс][TtТт]\b";
 lazy_static! {
     static ref RE: Regex = Regex::new(RUST_REGEX).unwrap();
     static ref REQ_TIME_DIFF: Duration = Duration::seconds(MIN_TIME_DIFF);
+    static ref POOL: PgPool = {
+        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        PgPool::connect_lazy(&database_url).unwrap()
+    };
 }
 
 #[tokio::main]
@@ -29,10 +35,9 @@ async fn run() {
     log::info!("Starting bot...");
 
     let bot = Bot::from_env().auto_send();
-
-    let pool = mention_repository::establish_connection()
-        .await
-        .expect("Can't establish connection");
+    let regex = Regex::new(RUST_REGEX).unwrap();
+    let pool = establish_connection();
+    let req_time_diff = Duration::seconds(MIN_TIME_DIFF);
 
     // pool the latest mention time during app initialization
     let last_mention_time = mention_repository::lead_earliest_mention_time(&pool)
@@ -43,6 +48,9 @@ async fn run() {
 
     teloxide::repl(bot, move |message| {
         let cloned_pool = pool.clone();
+        let cloned_regex = regex.clone();
+        let cloned_time_diff = req_time_diff.clone();
+
         async move {
             let input_message = message.update.text().unwrap();
 
@@ -75,7 +83,7 @@ async fn run() {
                         .await?;
 
                     last_update_time = curr_date;
-                    mention_repository::insert_mention(&cloned_pool, user.id);
+                    mention_repository::insert_mention(&*POOL, user.id);
                 }
             }
 
@@ -85,4 +93,11 @@ async fn run() {
         }
     })
     .await;
+}
+
+pub async fn establish_connection() -> Pool<Postgres> {
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    PgPool::connect(&database_url)
+        .await
+        .expect("Can't establish connection")
 }
