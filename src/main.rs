@@ -1,10 +1,9 @@
 mod mention_repository;
 
-#[macro_use]
-extern crate lazy_static;
-
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use regex::Regex;
+use sqlx::{PgPool, Pool, Postgres};
+use std::env;
 use teloxide::prelude::*;
 use teloxide::types::InputFile;
 
@@ -13,11 +12,6 @@ const HOURS_PER_DAY: i64 = 24;
 const MINUTES_PER_HOUR: i64 = 60;
 const MIN_TIME_DIFF: i64 = 30;
 const RUST_REGEX: &str = r"\b[RrРр][AaUuАа][CcSsСс][TtТт]\b";
-
-lazy_static! {
-    static ref RE: Regex = Regex::new(RUST_REGEX).unwrap();
-    static ref REQ_TIME_DIFF: Duration = Duration::seconds(MIN_TIME_DIFF);
-}
 
 #[tokio::main]
 async fn main() {
@@ -29,10 +23,9 @@ async fn run() {
     log::info!("Starting bot...");
 
     let bot = Bot::from_env().auto_send();
-
-    let pool = mention_repository::establish_connection()
-        .await
-        .expect("Can't establish connection");
+    let regex = Regex::new(RUST_REGEX).unwrap();
+    let pool = establish_connection().await;
+    let req_time_diff = Duration::seconds(MIN_TIME_DIFF);
 
     // pool the latest mention time during app initialization
     let last_mention_time = mention_repository::lead_earliest_mention_time(&pool)
@@ -41,43 +34,58 @@ async fn run() {
     let mut last_update_time = Utc.from_utc_datetime(&last_mention_time);
     log::info!("latest mention time: {}", last_update_time);
 
-    teloxide::repl(bot, move |message| async move {
-        let input_message = message.update.text().unwrap();
+    teloxide::repl(bot, move |message| {
+        let cloned_pool = pool.clone();
+        let cloned_regex = regex.clone();
+        let cloned_time_diff = req_time_diff.clone();
 
-        if RE.is_match(input_message) {
-            let message_date = message.update.date;
-            let curr_native_date = NaiveDateTime::from_timestamp(*&message_date as i64, 0);
-            log::info!("curr_native_date: {}", curr_native_date);
-            let curr_date = DateTime::from_utc(curr_native_date, Utc);
-            log::info!("curr_date: {}", curr_date);
-            let time_diff = curr_date.signed_duration_since(last_update_time);
-            log::info!("time_diff: {}", time_diff);
+        async move {
+            let input_message = message.update.text().unwrap();
 
-            if time_diff > *REQ_TIME_DIFF {
-                let username = message.update.from().unwrap().username.as_ref();
+            if cloned_regex.is_match(input_message) {
+                let message_date = message.update.date;
+                let curr_native_date = NaiveDateTime::from_timestamp(*&message_date as i64, 0);
+                log::info!("curr_native_date: {}", curr_native_date);
+                let curr_date = DateTime::from_utc(curr_native_date, Utc);
+                log::info!("curr_date: {}", curr_date);
+                let time_diff = curr_date.signed_duration_since(last_update_time);
+                log::info!("time_diff: {}", time_diff);
 
-                message
-                    .answer(format!(
-                        "Hi, {}! You just wrote smth about Rust! \nBe careful, \
+                if time_diff > cloned_time_diff {
+                    let user = message.update.from().unwrap();
+                    let username = user.username.as_ref().unwrap();
+
+                    message
+                        .answer(format!(
+                            "Hi, {}! You just wrote smth about Rust! \nBe careful, \
                     {}d:{}h:{}m since last incident.",
-                        username.unwrap(),
-                        time_diff.num_days(),
-                        time_diff.num_hours() % HOURS_PER_DAY,
-                        time_diff.num_minutes() % MINUTES_PER_HOUR
-                    ))
-                    .await?;
+                            username,
+                            time_diff.num_days(),
+                            time_diff.num_hours() % HOURS_PER_DAY,
+                            time_diff.num_minutes() % MINUTES_PER_HOUR
+                        ))
+                        .await?;
 
-                last_update_time = curr_date;
+                    message
+                        .answer_sticker(InputFile::file_id(STICKER_ID))
+                        .await?;
+
+                    last_update_time = curr_date;
+                    mention_repository::insert_mention(&cloned_pool, user.id).await;
+                }
             }
+
+            log::info!("last date second: {}", last_update_time);
+
+            respond(())
         }
-
-        log::info!("last date second: {}", last_update_time);
-        message
-            .answer_sticker(InputFile::file_id(STICKER_ID))
-            .await?;
-
-        // TODO: insert new mention
-        respond(())
     })
     .await;
+}
+
+pub async fn establish_connection() -> Pool<Postgres> {
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    PgPool::connect(&database_url)
+        .await
+        .expect("Can't establish connection")
 }
