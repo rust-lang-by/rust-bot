@@ -1,6 +1,6 @@
+use sqlx::postgres::PgQueryResult;
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{Error, PgPool};
-use sqlx::postgres::{PgQueryResult};
 
 pub async fn lead_earliest_mention_time(pool: &PgPool) -> Result<NaiveDateTime, Error> {
     sqlx::query_as("SELECT updated_at FROM mentions ORDER BY updated_at DESC LIMIT 1")
