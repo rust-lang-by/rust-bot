@@ -71,7 +71,9 @@ async fn run() {
                         .await?;
 
                     last_update_time = curr_date;
-                    mention_repository::insert_mention(&cloned_pool, user.id).await;
+                    mention_repository::insert_mention(&cloned_pool, user.id)
+                        .await
+                        .unwrap();
                 }
             }
 
