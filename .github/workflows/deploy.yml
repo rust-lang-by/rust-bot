@@ -17,4 +17,4 @@ jobs:
           usedocker: true
           docker_heroku_process_type: worker
         env:
-          TELEGRAM_BOT_TOKEN: ${{secrets.TELEGRAM_BOT_TOKEN}}
+          TELOXIDE_TOKEN: ${{secrets.TELEGRAM_BOT_TOKEN}}
