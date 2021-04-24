@@ -1206,7 +1206,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustlang-bot"
+name = "rust-bot"
 version = "0.1.0"
 dependencies = [
  "chrono",
