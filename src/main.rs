@@ -56,7 +56,7 @@ async fn run() {
                     let username = user.username.as_ref().unwrap();
 
                     message
-                        .answer(format!(
+                        .reply_to(format!(
                             "Hi, {}! You just wrote smth about Rust! \nBe careful, \
                     {}d:{}h:{}m since last incident.",
                             username,
