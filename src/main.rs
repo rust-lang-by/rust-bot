@@ -62,17 +62,18 @@ async fn handle_matched_mention(
     log::info!("latest update time: {}", last_update_time);
 
     let time_diff = curr_date.signed_duration_since(last_update_time);
+    let user_id = message.update.from().expect("Can't identify user").id;
 
     if time_diff > cloned_time_diff {
-        send_mention_response(message, cloned_pool, time_diff).await;
+        send_mention_response(message, time_diff).await;
     }
+
+    mention_repository::insert_mention(&cloned_pool, user_id)
+        .await
+        .expect("Can't insert mention");
 }
 
-async fn send_mention_response(
-    message: UpdateWithCx<AutoSend<Bot>, Message>,
-    cloned_pool: PgPool,
-    time_diff: Duration,
-) {
+async fn send_mention_response(message: UpdateWithCx<AutoSend<Bot>, Message>, time_diff: Duration) {
     let user = message.update.from().expect("Can't identify user");
     let username = user.username.as_ref().unwrap();
 
@@ -92,10 +93,6 @@ async fn send_mention_response(
         .answer_sticker(InputFile::file_id(STICKER_ID))
         .await
         .expect("Can't send sticker");
-
-    mention_repository::insert_mention(&cloned_pool, user.id)
-        .await
-        .expect("Can't insert mention");
 }
 
 async fn establish_connection() -> Pool<Postgres> {
