@@ -6,7 +6,7 @@ services:
       context: .
     environment:
       - TELOXIDE_TOKEN=token
-      - DATABASE_URL=jdbc:postgresql://postgres:5432/postgres
+      - DATABASE_URL=jdbc:postgresql://docker:password@postgres:5432/postgres
     depends_on:
       - postgres
 

@@ -23,7 +23,7 @@ async fn run() {
     log::info!("Starting bot...");
 
     let bot = Bot::from_env().auto_send();
-    let regex = Regex::new(RUST_REGEX).unwrap();
+    let regex = Regex::new(RUST_REGEX).expect("Can't compile regex");
     let pool = establish_connection().await;
     let req_time_diff = Duration::minutes(MIN_TIME_DIFF);
 
@@ -55,28 +55,28 @@ async fn handle_matched_mention(
     log::info!("mention time: {}", curr_date);
 
     // pool the latest mention time from db
-    let last_mention_time = mention_repository::lead_earliest_mention_time(&cloned_pool)
-        .await
-        .expect("Can't pool latest mention time");
+    let last_mention_time = mention_repository::lead_earliest_mention_time(&cloned_pool).await;
     let last_update_time = Utc.from_utc_datetime(&last_mention_time);
     log::info!("latest update time: {}", last_update_time);
 
     let time_diff = curr_date.signed_duration_since(last_update_time);
-    let user_id = message.update.from().expect("Can't identify user").id;
+    let user = message.update.from().expect("Can't identify user");
+    let user_id = user.id;
+    let username = user.username.clone().unwrap_or(String::from("unknown"));
+    let username_str = username.as_str();
 
     if time_diff > cloned_time_diff {
-        send_mention_response(message, time_diff).await;
+        send_mention_response(message, time_diff, username_str).await;
     }
 
-    mention_repository::insert_mention(&cloned_pool, user_id)
-        .await
-        .expect("Can't insert mention");
+    mention_repository::insert_mention(&cloned_pool, user_id, username_str).await;
 }
 
-async fn send_mention_response(message: UpdateWithCx<AutoSend<Bot>, Message>, time_diff: Duration) {
-    let user = message.update.from().expect("Can't identify user");
-    let username = user.username.as_ref().unwrap();
-
+async fn send_mention_response(
+    message: UpdateWithCx<AutoSend<Bot>, Message>,
+    time_diff: Duration,
+    username: &str,
+) {
     message
         .reply_to(format!(
             "Hi, {}! You just wrote smth about Rust! \nBe careful, \
