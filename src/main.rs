@@ -92,7 +92,8 @@ async fn send_mention_response(
     message
         .answer_sticker(InputFile::file_id(STICKER_ID))
         .await
-        .expect("Can't send sticker");
+        .map_err(|err| log::error!("Can't send a sticker: {:?}", err))
+        .ok();
 }
 
 async fn establish_connection() -> Pool<Postgres> {
