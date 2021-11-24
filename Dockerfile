@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=ekidd/rust-musl-builder:latest
+ARG BASE_IMAGE=ekidd/rust-musl-builder
 
 # Our first FROM statement declares the build environment.
 FROM ${BASE_IMAGE} AS builder
@@ -10,7 +10,7 @@ COPY --chown=rust:rust . ./
 RUN cargo build --release
 
 # Now, we need to build our _real_ Docker container, copying in `rust-bot`.
-FROM alpine:latest
+FROM alpine
 RUN apk --no-cache add ca-certificates
 COPY --from=builder \
     /home/rust/src/target/x86_64-unknown-linux-musl/release/rust-bot \
