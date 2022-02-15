@@ -49,8 +49,8 @@ async fn handle_matched_mention(
     cloned_pool: PgPool,
     cloned_time_diff: Duration,
 ) {
-    let message_date = message.update.date;
-    let curr_native_date = NaiveDateTime::from_timestamp(*&message_date as i64, 0);
+    let message_date = message.update.date.timestamp();
+    let curr_native_date = NaiveDateTime::from_timestamp(message_date, 0);
     let curr_date: DateTime<Utc> = DateTime::from_utc(curr_native_date, Utc);
     log::info!("mention time: {}", curr_date);
 
