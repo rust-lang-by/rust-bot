@@ -5,7 +5,7 @@ use regex::Regex;
 use sqlx::{PgPool, Pool, Postgres};
 use teloxide::prelude2::*;
 use teloxide::types::MessageKind::Common;
-use teloxide::types::{InputFile, MediaKind, MediaText, MessageCommon, User};
+use teloxide::types::{InputFile, MessageCommon, User};
 
 mod mention_repository;
 
