@@ -600,6 +600,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "heck"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2540771e65fc8cb83cd6e8a237f70c319bd5c29f78ed1084ba5d50eeac86f7f9"
+
+[[package]]
 name = "hermit-abi"
 version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1606,7 +1612,7 @@ checksum = "eee35713129561f5e55c554bba1c378e2a7e67f81257b7311183de98c50e6f94"
 dependencies = [
  "dotenv",
  "either",
- "heck",
+ "heck 0.3.3",
  "once_cell",
  "proc-macro2",
  "quote",
@@ -1676,9 +1682,9 @@ checksum = "20f34339676cdcab560c9a82300c4c2581f68b9369aedf0fae86f2ff9565ff3e"
 
 [[package]]
 name = "teloxide"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ca0250da0924b4803dbbd7f40519361080bc62b90221a6ac5835a44693bc604"
+checksum = "1661e7429fceb92080e41548b2fcc5b9cc38db8740316efbd9b53ba693cac0cf"
 dependencies = [
  "aquamarine",
  "async-trait",
@@ -1734,10 +1740,11 @@ dependencies = [
 
 [[package]]
 name = "teloxide-macros"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdecc526f8c0ee61d546426fa61a32bc650c4c5c17ba6d97333153ebd562cf3f"
+checksum = "7d08322f107110dc4aadf5683bf19df9340eebc567529def2d17c830de198a58"
 dependencies = [
+ "heck 0.4.0",
  "proc-macro2",
  "quote",
  "syn",
