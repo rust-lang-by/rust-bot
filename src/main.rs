@@ -33,7 +33,7 @@ async fn run() {
 
     let handler = Update::filter_message().branch(
         // Filtering allow you to filter updates by some condition.
-        dptree::filter(|msg: Message| msg.chat.is_private())
+        dptree::filter(|msg: Message| true)
             // An endpoint is the last update handler.
             .endpoint(
                 |msg: Message,
