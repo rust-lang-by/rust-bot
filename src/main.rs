@@ -32,8 +32,8 @@ async fn run() {
     };
 
     let handler = Update::filter_message().branch(
-        // Filtering allow you to filter updates by some condition.
-        dptree::filter(|msg: Message| true)
+        // Filtering to focus on chat mentions
+        dptree::filter(|msg: Message| msg.chat.is_group() || msg.chat.is_supergroup())
             // An endpoint is the last update handler.
             .endpoint(
                 |msg: Message,
