@@ -33,7 +33,7 @@ async fn run() {
 
     let handler = Update::filter_message().branch(
         // Filtering to focus on chat mentions
-        dptree::filter(|msg: Message| msg.chat.is_group() || msg.chat.is_supergroup())
+        dptree::filter(|msg: Message| !msg.chat.is_private())
             // An endpoint is the last update handler.
             .endpoint(
                 |msg: Message,
