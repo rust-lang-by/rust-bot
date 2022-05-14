@@ -10,7 +10,7 @@ pub async fn lead_earliest_mention_time(pool: &PgPool) -> NaiveDateTime {
         .expect("Can't pool latest mention time")
 }
 
-pub async fn insert_mention(pool: &PgPool, user_id: i64, username: &String) -> PgQueryResult {
+pub async fn insert_mention(pool: &PgPool, user_id: i64, username: &str) -> PgQueryResult {
     sqlx::query("INSERT INTO mentions(user_id, username) VALUES ($1, $2)  ON CONFLICT (user_id) DO UPDATE SET updated_at = current_timestamp, counter = mentions.counter + 1")
         .bind(user_id)
         .bind(username)

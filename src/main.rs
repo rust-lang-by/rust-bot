@@ -3,9 +3,9 @@ use std::env;
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use regex::Regex;
 use sqlx::{PgPool, Pool, Postgres};
-use teloxide::prelude2::*;
+use teloxide::prelude::*;
 use teloxide::types::MessageKind::Common;
-use teloxide::types::{InputFile, MessageCommon, User};
+use teloxide::types::{ChatId, InputFile, MessageCommon, User};
 
 mod mention_repository;
 
@@ -100,16 +100,16 @@ async fn handle_matched_mention(
             send_mention_response(bot, message.chat.id, message.id, time_diff, &username).await;
         }
 
-        mention_repository::insert_mention(&db_pool, user_id, &username).await;
+        mention_repository::insert_mention(&db_pool, user_id.0 as i64, &username).await;
     }
 }
 
 async fn send_mention_response(
     bot: AutoSend<Bot>,
-    chat_id: i64,
+    chat_id: ChatId,
     message_id: i32,
     time_diff: Duration,
-    username: &String,
+    username: &str,
 ) {
     bot.send_message(
         chat_id,
