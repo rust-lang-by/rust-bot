@@ -13,4 +13,4 @@ tokio = { version = "1.18.2", features = ["rt-multi-thread", "macros"] }
 regex = "1.5.5"
 chrono = "0.4.19"
 
-sqlx = { version = "0.5", features = ["postgres", "runtime-tokio-native-tls", "chrono"] }
+sqlx = { version = "0.6", features = ["postgres", "runtime-tokio-native-tls", "chrono"] }
