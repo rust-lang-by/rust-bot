@@ -2,20 +2,18 @@ name: Deploy
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
 jobs:
   deploy:
+    name: Deploy app
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: akhileshns/heroku-deploy@v3.12.12 # This is the action
-        with:
-          heroku_api_key: ${{secrets.HEROKU_API_KEY}}
-          heroku_app_name: ${{secrets.HEROKU_APP_NAME}}
-          heroku_email: ${{secrets.HEROKU_EMAIL}}
-          usedocker: true
-          docker_heroku_process_type: worker
-        env:
-          HD_TELOXIDE_TOKEN: ${{secrets.TELEGRAM_BOT_TOKEN}}
-          HD_DATABASE_URL: ${{secrets.DATABASE_URL}}
+      - uses: actions/checkout@v3
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: flyctl deploy --remote-only
