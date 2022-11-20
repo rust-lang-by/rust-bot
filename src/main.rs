@@ -1,11 +1,12 @@
 use std::env;
 
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
+use log::{error, info};
 use regex::Regex;
 use sqlx::{PgPool, Pool, Postgres};
 use teloxide::prelude::*;
 use teloxide::types::MessageKind::Common;
-use teloxide::types::{ChatId, InputFile, MessageCommon, User};
+use teloxide::types::{ChatId, InputFile, MessageCommon, MessageId, User};
 
 mod mention_repository;
 
@@ -21,10 +22,10 @@ async fn main() {
 }
 
 async fn run() {
-    teloxide::enable_logging!();
-    log::info!("Starting bot...");
+    pretty_env_logger::init();
+    info!("Starting bot...");
 
-    let bot = Bot::from_env().auto_send();
+    let bot = Bot::from_env();
     let db_pool = establish_connection().await;
     let mention_parameters = MentionParameters {
         regex: Regex::new(RUST_REGEX).expect("Can't compile regex"),
@@ -39,7 +40,7 @@ async fn run() {
                 |msg: Message,
                  mention_parameters: MentionParameters,
                  db_pool: Pool<Postgres>,
-                 bot: AutoSend<Bot>| async move {
+                 bot: Bot| async move {
                     if let Some(message) = msg.text() {
                         if mention_parameters.regex.is_match(message) {
                             handle_matched_mention(
@@ -62,27 +63,27 @@ async fn run() {
         .error_handler(LoggingErrorHandler::with_custom_text(
             "An error has occurred in the dispatcher",
         ))
+        .enable_ctrlc_handler()
         .build()
-        .setup_ctrlc_handler()
         .dispatch()
         .await;
 }
 
 async fn handle_matched_mention(
-    bot: AutoSend<Bot>,
+    bot: Bot,
     message: Message,
     db_pool: PgPool,
     req_time_diff: Duration,
 ) {
     let message_date = message.date.timestamp();
-    let curr_native_date = NaiveDateTime::from_timestamp(message_date, 0);
+    let curr_native_date = NaiveDateTime::from_timestamp_opt(message_date, 0).unwrap();
     let curr_date: DateTime<Utc> = DateTime::from_utc(curr_native_date, Utc);
-    log::info!("mention time: {}", curr_date);
+    info!("mention time: {}", curr_date);
 
     // pool the latest mention time from db
     let last_mention_time = mention_repository::lead_earliest_mention_time(&db_pool).await;
     let last_update_time = Utc.from_utc_datetime(&last_mention_time);
-    log::info!("latest update time: {}", last_update_time);
+    info!("latest update time: {}", last_update_time);
 
     let time_diff = curr_date.signed_duration_since(last_update_time);
 
@@ -105,9 +106,9 @@ async fn handle_matched_mention(
 }
 
 async fn send_mention_response(
-    bot: AutoSend<Bot>,
+    bot: Bot,
     chat_id: ChatId,
-    message_id: i32,
+    message_id: MessageId,
     time_diff: Duration,
     username: &str,
 ) {
@@ -124,12 +125,12 @@ async fn send_mention_response(
     )
     .reply_to_message_id(message_id)
     .await
-    .map_err(|err| log::error!("Can't send reply: {:?}", err))
+    .map_err(|err| error!("Can't send reply: {:?}", err))
     .ok();
 
     bot.send_sticker(chat_id, InputFile::file_id(STICKER_ID))
         .await
-        .map_err(|err| log::error!("Can't send a sticker: {:?}", err))
+        .map_err(|err| error!("Can't send a sticker: {:?}", err))
         .ok();
 }
 
