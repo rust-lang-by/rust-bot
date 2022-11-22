@@ -1,19 +1,47 @@
-ARG BASE_IMAGE=rust:alpine
+####################################################################################################
+## Builder
+####################################################################################################
+FROM rust:alpine AS builder
 
-# Our first FROM statement declares the build environment.
-FROM ${BASE_IMAGE} AS builder
+RUN rustup target add x86_64-unknown-linux-musl
 RUN apk --no-cache add musl-dev openssl-dev
+RUN update-ca-certificates
 
-# Add our source code.
-COPY --chown=rust:rust . ./
+# Create appuser
+ENV USER=rust-bot
+ENV UID=10001
 
-# Build our application.
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/nonexistent" \
+    --shell "/sbin/nologin" \
+    --no-create-home \
+    --uid "${UID}" \
+    "${USER}"
+
+
+WORKDIR /rust-bot
+
+COPY ./ .
+
 RUN cargo build --target x86_64-unknown-linux-musl --release
 
-# Now, we need to build our _real_ Docker container, copying in `rust-bot`.
-FROM alpine
-RUN apk --no-cache add ca-certificates
-COPY --from=builder \
-    /home/rust/src/target/x86_64-unknown-linux-musl/release/rust-bot \
-    /usr/local/bin/
-CMD /usr/local/bin/rust-bot
+####################################################################################################
+## Final image
+####################################################################################################
+FROM scratch
+
+# Import from builder.
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group /etc/group
+
+WORKDIR /rust-bot
+
+# Copy our build
+COPY --from=builder /rust-bot/target/x86_64-unknown-linux-musl/release/rust-bot ./
+
+# Use an unprivileged user.
+USER rust-bot:rust-bot
+
+CMD ["/rust-bot/rust-bot"]
