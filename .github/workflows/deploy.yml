@@ -7,9 +7,6 @@ on:
 
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-  TELOXIDE_TOKEN: ${{ secrets.TELOXIDE_TOKEN }}
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
-  RUST_LOG: info
 
 jobs:
   deploy:
