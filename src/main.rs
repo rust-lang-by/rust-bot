@@ -49,7 +49,7 @@ async fn run() {
                                 db_pool,
                                 mention_parameters.req_time_diff,
                             )
-                                .await;
+                            .await;
                         }
                     }
                     respond(())
@@ -88,14 +88,14 @@ async fn handle_matched_mention(
     let time_diff = curr_date.signed_duration_since(last_update_time);
 
     if let Common(MessageCommon {
-                      from:
-                      Some(User {
-                               id: user_id,
-                               username: Some(username),
-                               ..
-                           }),
-                      ..
-                  }) = message.kind
+        from:
+            Some(User {
+                id: user_id,
+                username: Some(username),
+                ..
+            }),
+        ..
+    }) = message.kind
     {
         if time_diff > req_time_diff {
             send_mention_response(bot, message.chat.id, message.id, time_diff, &username).await;
@@ -123,11 +123,11 @@ async fn send_mention_response(
             time_diff.num_minutes() % MINUTES_PER_HOUR
         ),
     )
-        .message_thread_id(message_id.0)
-        .reply_to_message_id(message_id.0)
-        .await
-        .map_err(|err| error!("Can't send reply: {:?}", err))
-        .ok();
+    .message_thread_id(message_id.0)
+    .reply_to_message_id(message_id)
+    .await
+    .map_err(|err| error!("Can't send reply: {:?}", err))
+    .ok();
 
     bot.send_sticker(chat_id, InputFile::file_id(STICKER_ID))
         .message_thread_id(message_id.0)
