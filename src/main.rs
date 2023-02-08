@@ -123,12 +123,14 @@ async fn send_mention_response(
             time_diff.num_minutes() % MINUTES_PER_HOUR
         ),
     )
+    .message_thread_id(message_id.0)
     .reply_to_message_id(message_id)
     .await
     .map_err(|err| error!("Can't send reply: {:?}", err))
     .ok();
 
     bot.send_sticker(chat_id, InputFile::file_id(STICKER_ID))
+        .message_thread_id(message_id.0)
         .await
         .map_err(|err| error!("Can't send a sticker: {:?}", err))
         .ok();
