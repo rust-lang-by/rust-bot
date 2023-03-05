@@ -98,7 +98,8 @@ async fn handle_matched_mention(
     }) = message.kind
     {
         if time_diff > req_time_diff {
-            send_mention_response(bot, message.chat.id, message.id, time_diff, &username).await;
+            let message_ids = (message.id, message.chat.id, message.thread_id);
+            send_mention_response(bot, message_ids, time_diff, &username).await;
         }
 
         mention_repository::insert_mention(&db_pool, user_id.0 as i64, &username).await;
@@ -107,13 +108,12 @@ async fn handle_matched_mention(
 
 async fn send_mention_response(
     bot: Bot,
-    chat_id: ChatId,
-    message_id: MessageId,
+    message_ids: (MessageId, ChatId, Option<i32>),
     time_diff: Duration,
     username: &str,
 ) {
     bot.send_message(
-        chat_id,
+        message_ids.1,
         format!(
             "Hi, {}! You just wrote smth about Rust! \nBe careful, \
                     {}d:{}h:{}m since last incident.",
@@ -123,14 +123,14 @@ async fn send_mention_response(
             time_diff.num_minutes() % MINUTES_PER_HOUR
         ),
     )
-    .message_thread_id(message_id.0)
-    .reply_to_message_id(message_id)
+    .message_thread_id(message_ids.2.unwrap_or(0))
+    .reply_to_message_id(message_ids.0)
     .await
     .map_err(|err| error!("Can't send reply: {:?}", err))
     .ok();
 
-    bot.send_sticker(chat_id, InputFile::file_id(STICKER_ID))
-        .message_thread_id(message_id.0)
+    bot.send_sticker(message_ids.1, InputFile::file_id(STICKER_ID))
+        .message_thread_id(message_ids.2.unwrap_or(0))
         .await
         .map_err(|err| error!("Can't send a sticker: {:?}", err))
         .ok();
