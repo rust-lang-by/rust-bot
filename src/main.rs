@@ -15,7 +15,7 @@ const HOURS_PER_DAY: i64 = 24;
 const MINUTES_PER_HOUR: i64 = 60;
 const MIN_TIME_DIFF: i64 = 15;
 const RUST_REGEX: &str = r"\b[RrРр][AaUuАа][CcSsСс][TtТт]\b";
-const BLAZING_FAST_REGEX: &str = r"\b[BbБб][LlЛл]\w*\W[FfФф][AaАа]\b";
+const BLAZING_FAST_REGEX: &str = r"\b[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
 
 #[tokio::main]
 async fn main() {
@@ -78,7 +78,7 @@ async fn run() {
 }
 
 async fn handle_bf_matched_mention(bot: Bot, msg: Message) {
-    bot.send_message(msg.chat.id, "Hi! suppose you meant Rust!".to_string())
+    bot.send_message(msg.chat.id, "Did you meant Rust? 👉👈".to_string())
         .reply_to_message_id(msg.id)
         .message_thread_id(msg.thread_id.unwrap_or(0))
         .await
