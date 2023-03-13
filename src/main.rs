@@ -97,13 +97,6 @@ async fn handle_rust_matched_mention(
     let curr_date: DateTime<Utc> = DateTime::from_utc(curr_native_date, Utc);
     info!("mention time: {}", curr_date);
 
-    // pool the latest mention time from db
-    let last_mention_time = mention_repository::lead_earliest_mention_time(&db_pool).await;
-    let last_update_time = Utc.from_utc_datetime(&last_mention_time);
-    info!("latest update time: {}", last_update_time);
-
-    let time_diff = curr_date.signed_duration_since(last_update_time);
-
     if let Common(MessageCommon {
         from:
             Some(User {
@@ -114,12 +107,28 @@ async fn handle_rust_matched_mention(
         ..
     }) = message.kind
     {
+        // pool the latest mention time from db
+        let last_mention_time =
+            mention_repository::lead_earliest_mention_time(&db_pool, user_id.0, message.chat.id.0)
+                .await;
+        let last_update_time = Utc.from_utc_datetime(&last_mention_time);
+        info!("latest update time: {}", last_update_time);
+
+        let time_diff = curr_date.signed_duration_since(last_update_time);
         if time_diff > req_time_diff {
             let message_ids = (message.id, message.chat.id, message.thread_id.unwrap_or(0));
             send_rust_mention_response(bot, message_ids, time_diff, &username).await;
         }
 
-        mention_repository::insert_mention(&db_pool, user_id.0 as i64, &username).await;
+        mention_repository::insert_mention(
+            &db_pool,
+            user_id.0 as i64,
+            &username,
+            message
+                .thread_id
+                .map_or_else(|| message.chat.id.0, |id| id as i64),
+        )
+        .await;
     }
 }
 
