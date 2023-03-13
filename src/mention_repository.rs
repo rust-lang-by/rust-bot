@@ -12,12 +12,12 @@ pub async fn lead_earliest_mention_time(
                 WHERE user_id = $1 AND chat_id = $2 \
                     ORDER BY updated_at DESC LIMIT 1",
     )
-        .bind(user_id as i64)
-        .bind(chat_id)
-        .fetch_optional(pool)
-        .await
-        .map(|v: Option<(NaiveDateTime,)>| v.unwrap_or((NaiveDateTime::MIN,)).0)
-        .expect("Can't pool latest mention time")
+    .bind(user_id as i64)
+    .bind(chat_id)
+    .fetch_optional(pool)
+    .await
+    .map(|v: Option<(NaiveDateTime,)>| v.unwrap_or((NaiveDateTime::MIN,)).0)
+    .expect("Can't pool latest mention time")
 }
 
 pub async fn insert_mention(
@@ -31,10 +31,10 @@ pub async fn insert_mention(
                 ON CONFLICT (user_id, chat_id) DO UPDATE \
                     SET updated_at = current_timestamp, counter = mentions.counter + 1",
     )
-        .bind(user_id)
-        .bind(username)
-        .bind(chat_id)
-        .execute(pool)
-        .await
-        .expect("Can't insert mention")
+    .bind(user_id)
+    .bind(username)
+    .bind(chat_id)
+    .execute(pool)
+    .await
+    .expect("Can't insert mention")
 }
