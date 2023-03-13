@@ -10,7 +10,8 @@ use teloxide::types::{ChatId, InputFile, MessageCommon, MessageId, User};
 
 mod mention_repository;
 
-const STICKER_ID: &str = "CAACAgEAAxkBAAOrYGoytP93yNKPRS6jo39dCGmuXnUAAlcBAAJpejEFk0uf6g86yKAeBA";
+const STICKER_ID: &str =
+    "CAACAgEAAx0CTdy33AAD3mQO6sc3rzklybqG4MMI4MLXpXJIAAKCAQACaXoxBT0NGBN6KJNELwQ";
 const HOURS_PER_DAY: i64 = 24;
 const MINUTES_PER_HOUR: i64 = 60;
 const MIN_TIME_DIFF: i64 = 15;
