@@ -10,11 +10,13 @@ use teloxide::types::{ChatId, InputFile, MessageCommon, MessageId, User};
 
 mod mention_repository;
 
-const STICKER_ID: &str = "CAACAgEAAxkBAAOrYGoytP93yNKPRS6jo39dCGmuXnUAAlcBAAJpejEFk0uf6g86yKAeBA";
+const STICKER_ID: &str =
+    "CAACAgEAAx0CTdy33AAD3mQO6sc3rzklybqG4MMI4MLXpXJIAAKCAQACaXoxBT0NGBN6KJNELwQ";
 const HOURS_PER_DAY: i64 = 24;
 const MINUTES_PER_HOUR: i64 = 60;
 const MIN_TIME_DIFF: i64 = 15;
 const RUST_REGEX: &str = r"\b[RrРр][AaUuАа][CcSsСс][TtТт]\b";
+const BLAZING_FAST_REGEX: &str = r"\b[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
 
 #[tokio::main]
 async fn main() {
@@ -28,7 +30,8 @@ async fn run() {
     let bot = Bot::from_env();
     let db_pool = establish_connection().await;
     let mention_parameters = MentionParameters {
-        regex: Regex::new(RUST_REGEX).expect("Can't compile regex"),
+        rust_regex: Regex::new(RUST_REGEX).expect("Can't compile regex"),
+        blazing_fast_regex: Regex::new(BLAZING_FAST_REGEX).expect("Can't compile regex"),
         req_time_diff: Duration::minutes(MIN_TIME_DIFF),
     };
 
@@ -42,14 +45,20 @@ async fn run() {
                  db_pool: Pool<Postgres>,
                  bot: Bot| async move {
                     if let Some(message) = msg.text() {
-                        if mention_parameters.regex.is_match(message) {
-                            handle_matched_mention(
-                                bot,
-                                msg,
-                                db_pool,
-                                mention_parameters.req_time_diff,
-                            )
-                            .await;
+                        match message {
+                            m if mention_parameters.rust_regex.is_match(m) => {
+                                handle_rust_matched_mention(
+                                    bot,
+                                    msg,
+                                    db_pool,
+                                    mention_parameters.req_time_diff,
+                                )
+                                .await
+                            }
+                            m if mention_parameters.blazing_fast_regex.is_match(m) => {
+                                handle_bf_matched_mention(bot, msg).await
+                            }
+                            _ => {}
                         }
                     }
                     respond(())
@@ -69,7 +78,16 @@ async fn run() {
         .await;
 }
 
-async fn handle_matched_mention(
+async fn handle_bf_matched_mention(bot: Bot, msg: Message) {
+    bot.send_message(msg.chat.id, "Did you mean Rust? 👉👈".to_string())
+        .reply_to_message_id(msg.id)
+        .message_thread_id(msg.thread_id.unwrap_or(0))
+        .await
+        .map_err(|err| error!("Can't send reply: {:?}", err))
+        .ok();
+}
+
+async fn handle_rust_matched_mention(
     bot: Bot,
     message: Message,
     db_pool: PgPool,
@@ -79,13 +97,6 @@ async fn handle_matched_mention(
     let curr_native_date = NaiveDateTime::from_timestamp_opt(message_date, 0).unwrap();
     let curr_date: DateTime<Utc> = DateTime::from_utc(curr_native_date, Utc);
     info!("mention time: {}", curr_date);
-
-    // pool the latest mention time from db
-    let last_mention_time = mention_repository::lead_earliest_mention_time(&db_pool).await;
-    let last_update_time = Utc.from_utc_datetime(&last_mention_time);
-    info!("latest update time: {}", last_update_time);
-
-    let time_diff = curr_date.signed_duration_since(last_update_time);
 
     if let Common(MessageCommon {
         from:
@@ -97,23 +108,39 @@ async fn handle_matched_mention(
         ..
     }) = message.kind
     {
+        // pool the latest mention time from db
+        let last_mention_time =
+            mention_repository::lead_earliest_mention_time(&db_pool, user_id.0, message.chat.id.0)
+                .await;
+        let last_update_time = Utc.from_utc_datetime(&last_mention_time);
+        info!("latest update time: {}", last_update_time);
+
+        let time_diff = curr_date.signed_duration_since(last_update_time);
         if time_diff > req_time_diff {
-            send_mention_response(bot, message.chat.id, message.id, time_diff, &username).await;
+            let message_ids = (message.id, message.chat.id, message.thread_id.unwrap_or(0));
+            send_rust_mention_response(bot, message_ids, time_diff, &username).await;
         }
 
-        mention_repository::insert_mention(&db_pool, user_id.0 as i64, &username).await;
+        mention_repository::insert_mention(
+            &db_pool,
+            user_id.0 as i64,
+            &username,
+            message
+                .thread_id
+                .map_or_else(|| message.chat.id.0, |id| id as i64),
+        )
+        .await;
     }
 }
 
-async fn send_mention_response(
+async fn send_rust_mention_response(
     bot: Bot,
-    chat_id: ChatId,
-    message_id: MessageId,
+    message_ids: (MessageId, ChatId, i32),
     time_diff: Duration,
     username: &str,
 ) {
     bot.send_message(
-        chat_id,
+        message_ids.1,
         format!(
             "Hi, {}! You just wrote smth about Rust! \nBe careful, \
                     {}d:{}h:{}m since last incident.",
@@ -123,14 +150,14 @@ async fn send_mention_response(
             time_diff.num_minutes() % MINUTES_PER_HOUR
         ),
     )
-    .message_thread_id(message_id.0)
-    .reply_to_message_id(message_id)
+    .message_thread_id(message_ids.2)
+    .reply_to_message_id(message_ids.0)
     .await
     .map_err(|err| error!("Can't send reply: {:?}", err))
     .ok();
 
-    bot.send_sticker(chat_id, InputFile::file_id(STICKER_ID))
-        .message_thread_id(message_id.0)
+    bot.send_sticker(message_ids.1, InputFile::file_id(STICKER_ID))
+        .message_thread_id(message_ids.2)
         .await
         .map_err(|err| error!("Can't send a sticker: {:?}", err))
         .ok();
@@ -145,6 +172,7 @@ async fn establish_connection() -> Pool<Postgres> {
 
 #[derive(Clone)]
 struct MentionParameters {
-    regex: Regex,
+    rust_regex: Regex,
+    blazing_fast_regex: Regex,
     req_time_diff: Duration,
 }
