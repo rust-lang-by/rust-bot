@@ -1,0 +1,16 @@
+name: develop-auto-reset
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  develop-reset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Reset develop branch to master HEAD
+        run: |
+          git checkout -b develop
+          git push -f -u origin HEAD
