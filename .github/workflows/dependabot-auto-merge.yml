@@ -1,0 +1,17 @@
+name: dependabot-auto-merge
+
+on:
+  pull_request_target:
+    branches:
+      - develop
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Automatically merge Dependabot PR
+        uses: ahmadnassri/action-dependabot-auto-merge@v2
+        with:
+          target: minor
+          github-token: ${{ secrets.DEPENDABOT_PAT }}
