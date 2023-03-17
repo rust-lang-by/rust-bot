@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Reset develop branch to master HEAD
+      - name: Reset develop branch to main HEAD
         run: |
           git checkout -b develop
           git push -f -u origin HEAD

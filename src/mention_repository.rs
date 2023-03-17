@@ -8,7 +8,7 @@ pub async fn lead_earliest_mention_time(
 ) -> NaiveDateTime {
     sqlx::query_as(
         "SELECT updated_at FROM mentions \
-                WHERE chat_id = $2 \
+                WHERE chat_id = $1 \
                     ORDER BY updated_at DESC LIMIT 1",
     )
     .bind(chat_id)
