@@ -110,7 +110,7 @@ async fn handle_rust_matched_mention(
     {
         // pool the latest mention time from db
         let last_mention_time =
-            mention_repository::lead_earliest_mention_time(&db_pool, user_id.0, message.chat.id.0)
+            mention_repository::lead_earliest_mention_time(&db_pool, message.chat.id.0)
                 .await;
         let last_update_time = Utc.from_utc_datetime(&last_mention_time);
         info!("latest update time: {}", last_update_time);

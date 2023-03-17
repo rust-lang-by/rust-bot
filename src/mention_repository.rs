@@ -4,15 +4,13 @@ use sqlx::PgPool;
 
 pub async fn lead_earliest_mention_time(
     pool: &PgPool,
-    user_id: u64,
     chat_id: i64,
 ) -> NaiveDateTime {
     sqlx::query_as(
         "SELECT updated_at FROM mentions \
-                WHERE user_id = $1 AND chat_id = $2 \
+                WHERE chat_id = $2 \
                     ORDER BY updated_at DESC LIMIT 1",
     )
-    .bind(user_id as i64)
     .bind(chat_id)
     .fetch_optional(pool)
     .await
