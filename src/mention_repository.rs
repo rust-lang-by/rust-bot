@@ -2,10 +2,7 @@ use sqlx::postgres::PgQueryResult;
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::PgPool;
 
-pub async fn lead_earliest_mention_time(
-    pool: &PgPool,
-    chat_id: i64,
-) -> NaiveDateTime {
+pub async fn lead_earliest_mention_time(pool: &PgPool, chat_id: i64) -> NaiveDateTime {
     sqlx::query_as(
         "SELECT updated_at FROM mentions \
                 WHERE chat_id = $1 \
