@@ -10,8 +10,13 @@ use teloxide::types::{ChatId, InputFile, MessageCommon, MessageId, User};
 
 mod mention_repository;
 
-const STICKER_ID: &str =
-    "CAACAgEAAx0CTdy33AAD3mQO6sc3rzklybqG4MMI4MLXpXJIAAKCAQACaXoxBT0NGBN6KJNELwQ";
+const STICKERS: &[&str; 5] = &[
+    "CAACAgEAAx0CTdy33AAD3mQO6sc3rzklybqG4MMI4MLXpXJIAAKCAQACaXoxBT0NGBN6KJNELwQ",
+    "CAACAgEAAx0CTdy33AACAQFkF6KoodtDg4KfcPHlUk_7SRFN7QACkQEAAml6MQW86C1JCZcTkS8E",
+    "CAACAgEAAx0CTdy33AACAQxkF6Mu7nPaIs9rmMBfXs71BBPxfgACnAEAAml6MQVkU_PxsG8GmS8E",
+    "CAACAgEAAx0CTdy33AACARFkF6RG5xa8L2rn6ENe3NsMktY7GgACaQEAAml6MQWdvTv0FuDgLC8E",
+    "CAACAgEAAx0CTdy33AACARNkF6SmiAABryW7RcGozvQDCys7JNUAAlcBAAJpejEFk0uf6g86yKAvBA",
+];
 const HOURS_PER_DAY: i64 = 24;
 const MINUTES_PER_HOUR: i64 = 60;
 const MIN_TIME_DIFF: i64 = 15;
@@ -110,8 +115,7 @@ async fn handle_rust_matched_mention(
     {
         // pool the latest mention time from db
         let last_mention_time =
-            mention_repository::lead_earliest_mention_time(&db_pool, message.chat.id.0)
-                .await;
+            mention_repository::lead_earliest_mention_time(&db_pool, message.chat.id.0).await;
         let last_update_time = Utc.from_utc_datetime(&last_mention_time);
         info!("latest update time: {}", last_update_time);
 
@@ -156,11 +160,19 @@ async fn send_rust_mention_response(
     .map_err(|err| error!("Can't send reply: {:?}", err))
     .ok();
 
-    bot.send_sticker(message_ids.1, InputFile::file_id(STICKER_ID))
-        .message_thread_id(message_ids.2)
-        .await
-        .map_err(|err| error!("Can't send a sticker: {:?}", err))
-        .ok();
+    bot.send_sticker(
+        message_ids.1,
+        InputFile::file_id(fetch_sticker_id(time_diff)),
+    )
+    .message_thread_id(message_ids.2)
+    .await
+    .map_err(|err| error!("Can't send a sticker: {:?}", err))
+    .ok();
+}
+
+fn fetch_sticker_id(time_diff: Duration) -> &'static str {
+    let sticker_index = time_diff.num_minutes().rem_euclid(STICKERS.len() as i64) as usize;
+    STICKERS[sticker_index]
 }
 
 async fn establish_connection() -> Pool<Postgres> {
@@ -175,4 +187,16 @@ struct MentionParameters {
     rust_regex: Regex,
     blazing_fast_regex: Regex,
     req_time_diff: Duration,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{fetch_sticker_id, STICKERS};
+    use chrono::Duration;
+
+    #[test]
+    fn test_fetch_sticker_id() {
+        let sticker_id = fetch_sticker_id(Duration::minutes(7));
+        assert_eq!(sticker_id, STICKERS[2]);
+    }
 }
