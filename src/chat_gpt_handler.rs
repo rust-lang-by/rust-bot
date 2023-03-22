@@ -1,14 +1,11 @@
 use log::error;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::env;
 use teloxide::prelude::*;
 
-pub async fn handle_chat_gpt_question(bot: Bot, msg: Message) {
+pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, chat_gpt_api_token: String) {
     let message = msg.text().unwrap();
     let slice = &message[2..message.len()];
-    let chat_gpt_api_token =
-        env::var("CHAT_GPT_API_TOKEN").expect("CHAT_GPT_API_TOKEN must be set");
     let chat_response = chat_gpt_call(slice, chat_gpt_api_token)
         .await
         .unwrap_or_else(|_| "ChatGPT can't process request".to_string());
@@ -49,7 +46,6 @@ struct ChatMessageResponse {
     content: String,
     role: String,
 }
-
 
 async fn chat_gpt_call(
     message: &str,
