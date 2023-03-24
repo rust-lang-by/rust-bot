@@ -11,9 +11,9 @@ mod chat_gpt_handler;
 mod mention_repository;
 mod rust_mention_handler;
 
-const RUST_REGEX: &str = r"\b[RrРр][AaUuАа][CcSsСс][TtТт]\b";
-const BLAZING_FAST_REGEX: &str = r"\b[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
-const CHAT_GPT_REGEX: &str = r"\b[Qq][!?]\W\b";
+const RUST_REGEX: &str = r"\w*[RrРр][AaUuАа][CcSsСс][TtТт]\w*";
+const BLAZING_FAST_REGEX: &str = r"\w*[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
+const CHAT_GPT_REGEX: &str = r"\w*[FfФф][EeЕеЁё][DdДд][OoОо][RrРр]\w*";
 const MIN_TIME_DIFF: i64 = 15;
 
 #[tokio::main]
@@ -77,7 +77,11 @@ async fn run() {
     );
     Dispatcher::builder(bot, handler)
         // Here you specify initial dependencies that all handlers will receive
-        .dependencies(dptree::deps![mention_parameters, db_pool, chat_gpt_api_token])
+        .dependencies(dptree::deps![
+            mention_parameters,
+            db_pool,
+            chat_gpt_api_token
+        ])
         // If the dispatcher fails for some reason, execute this handler.
         .error_handler(LoggingErrorHandler::with_custom_text(
             "An error has occurred in the dispatcher",
@@ -111,7 +115,7 @@ mod tests {
     #[test]
     fn test_chat_gpt_regex() {
         let chat_gpt_regex = Regex::new(CHAT_GPT_REGEX).expect("Can't compile regex");
-        assert!(chat_gpt_regex.is_match("q! как дела?"));
-        assert!(chat_gpt_regex.is_match("Q? tests"));
+        assert!(chat_gpt_regex.is_match("ухх Федор как дела?"));
+        assert!(chat_gpt_regex.is_match("pFedor tests"));
     }
 }
