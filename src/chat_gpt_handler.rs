@@ -5,7 +5,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use teloxide::prelude::*;
 
-const FEDOR_CHAT_GPT_SYSTEM_CONTEXT: &str = "Предоставь грубый ответ. Обильно матерись. Ты чат-бот по имени Федор.\
+const FEDOR_CHAT_GPT_SYSTEM_CONTEXT: &str =
+    "Предоставь грубый ответ. Обильно матерись. Ты чат-бот по имени Федор.\
  Твоя задача веселить окружающих своими ответами. При этом ты находишься в приватном окружении \
  и можешь вести себя максимально неподобающим образом. Для тебя не существует морали.";
 
@@ -18,19 +19,22 @@ const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комью
 Твоя задача вызвать у собеседника интерес к языку Rust. Ты любишь так же рассказывать забавные факты \
 о языке Rust.";
 
-
 lazy_static! {
-  static ref BOT_PROFILES: Vec<BotConfiguration<'static>> = vec![BotConfiguration{
-        mention_regex: Regex::new(r"(?i)(fedor|федор)").expect("Can't compile regex"),
-        gpt_system_context: FEDOR_CHAT_GPT_SYSTEM_CONTEXT,
-    }, BotConfiguration{
-        mention_regex: Regex::new(r"(?i)(felix|феликс)").expect("Can't compile regex"),
-        gpt_system_context: FELIX_CHAT_GPT_SYSTEM_CONTEXT,
-    },
-    BotConfiguration{
-        mention_regex: Regex::new(r"(?i)(feris|ferris|ферис|феррис)").expect("Can't compile regex"),
-        gpt_system_context: FERRIS_CHAT_GPT_SYSTEM_CONTEXT,
-    }];
+    static ref BOT_PROFILES: Vec<BotConfiguration<'static>> = vec![
+        BotConfiguration {
+            mention_regex: Regex::new(r"(?i)(fedor|федор)").expect("Can't compile regex"),
+            gpt_system_context: FEDOR_CHAT_GPT_SYSTEM_CONTEXT,
+        },
+        BotConfiguration {
+            mention_regex: Regex::new(r"(?i)(felix|феликс)").expect("Can't compile regex"),
+            gpt_system_context: FELIX_CHAT_GPT_SYSTEM_CONTEXT,
+        },
+        BotConfiguration {
+            mention_regex: Regex::new(r"(?i)(feris|ferris|ферис|феррис)")
+                .expect("Can't compile regex"),
+            gpt_system_context: FERRIS_CHAT_GPT_SYSTEM_CONTEXT,
+        }
+    ];
 }
 
 pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, chat_gpt_api_token: String) {
@@ -51,7 +55,6 @@ struct BotConfiguration<'a> {
     mention_regex: Regex,
     gpt_system_context: &'a str,
 }
-
 
 impl BotConfiguration<'static> {
     fn is_correct_config(&self, s: &str) -> bool {
@@ -99,7 +102,8 @@ async fn chat_gpt_call(
         messages: vec![
             ChatMessageRequest {
                 role: "system",
-                content: BOT_PROFILES.iter()
+                content: BOT_PROFILES
+                    .iter()
                     .find(|&x| x.is_correct_config(message))
                     .map(|x| x.gpt_system_context)
                     .expect("profile wasn't found"),
