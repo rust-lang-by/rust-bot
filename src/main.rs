@@ -11,9 +11,9 @@ mod chat_gpt_handler;
 mod mention_repository;
 mod rust_mention_handler;
 
-const RUST_REGEX: &str = r"\w*[RrРр][AaUuАа][CcSsСс][TtТт]\w*";
+const RUST_REGEX: &str = r"(?i)(rust|раст)";
 const BLAZING_FAST_REGEX: &str = r"\w*[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
-const CHAT_GPT_REGEX: &str = r"\w*[FfФф][EeЕеЁё][DdДд][OoОо][RrРр]\w*";
+const CHAT_GPT_REGEX: &str = r"(?i)(fedor|федор|felix|феликс|feris|ferris|ферис|феррис)";
 const MIN_TIME_DIFF: i64 = 15;
 
 #[tokio::main]
@@ -117,5 +117,8 @@ mod tests {
         let chat_gpt_regex = Regex::new(CHAT_GPT_REGEX).expect("Can't compile regex");
         assert!(chat_gpt_regex.is_match("ухх Федор как дела?"));
         assert!(chat_gpt_regex.is_match("pFedor tests"));
+        assert!(chat_gpt_regex.is_match("p Felix greate"));
+        assert!(chat_gpt_regex.is_match("Феликс"));
+        assert!(chat_gpt_regex.is_match("[[[Ferris"));
     }
 }
