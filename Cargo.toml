@@ -17,5 +17,6 @@ sqlx = { version = "0.6", features = ["postgres", "runtime-tokio-native-tls", "c
 
 reqwest = { version = "0.11", features = ["json"] }
 serde = "1.0.158"
+redis = { version = "0.22.3", features = ["json"] }
 
 lazy_static = "1.4.0"
