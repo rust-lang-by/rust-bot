@@ -7,6 +7,7 @@ use teloxide::types::{InputFile, MessageCommon, MessageId, User};
 
 use crate::mention_repository;
 
+const RUST_CHAT: i64 = -1001228598755;
 const STICKERS: &[&str; 5] = &[
     "CAACAgEAAx0CTdy33AAD3mQO6sc3rzklybqG4MMI4MLXpXJIAAKCAQACaXoxBT0NGBN6KJNELwQ",
     "CAACAgEAAx0CTdy33AACAQFkF6KoodtDg4KfcPHlUk_7SRFN7QACkQEAAml6MQW86C1JCZcTkS8E",
@@ -42,14 +43,15 @@ pub async fn handle_rust_matched_mention(
     }) = message.kind
     {
         // pool the latest mention time from db
+        let chat_id = message.chat.id;
         let last_mention_time =
-            mention_repository::lead_earliest_mention_time(&db_pool, message.chat.id.0).await;
+            mention_repository::lead_earliest_mention_time(&db_pool, chat_id.0).await;
         let last_update_time = Utc.from_utc_datetime(&last_mention_time);
         info!("latest update time: {}", last_update_time);
 
         let time_diff = curr_date.signed_duration_since(last_update_time);
-        if time_diff > req_time_diff {
-            let message_ids = (message.id, message.chat.id, message.thread_id.unwrap_or(0));
+        if chat_id.0 != RUST_CHAT && time_diff > req_time_diff {
+            let message_ids = (message.id, chat_id, message.thread_id.unwrap_or(0));
             send_rust_mention_response(bot, message_ids, time_diff, &username).await;
         }
 
@@ -59,7 +61,7 @@ pub async fn handle_rust_matched_mention(
             &username,
             message
                 .thread_id
-                .map_or_else(|| message.chat.id.0, |id| id as i64),
+                .map_or_else(|| chat_id.0, |id| id as i64),
         )
         .await;
     }
