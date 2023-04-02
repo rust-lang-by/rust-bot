@@ -9,7 +9,7 @@ pub async fn get_context(
     redis::cmd("LRANGE")
         .arg(key)
         .arg(0)
-        .arg(10)
+        .arg(15)
         .query_async(&mut con)
         .await
 }
