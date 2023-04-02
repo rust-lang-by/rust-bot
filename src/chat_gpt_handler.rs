@@ -35,7 +35,7 @@ lazy_static! {
     static ref BOT_PROFILES: Vec<BotConfiguration<'static>> = vec![
         BotConfiguration {
             profile: Fedor,
-            mention_regex: Regex::new(r"(?i)(fedor|ф[её]дор)").expect("Can't compile regex"),
+            mention_regex: Regex::new(r"(?i)(fedor|ф[её]дор|федя)").expect("Can't compile regex"),
             gpt_system_context: FEDOR_CHAT_GPT_SYSTEM_CONTEXT,
         },
         BotConfiguration {
