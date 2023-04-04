@@ -8,8 +8,8 @@ pub async fn get_context(
     let mut con = connection.clone();
     redis::cmd("LRANGE")
         .arg(key)
+        .arg(-11)
         .arg(0)
-        .arg(11)
         .query_async(&mut con)
         .await
 }
