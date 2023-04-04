@@ -59,9 +59,7 @@ pub async fn handle_rust_matched_mention(
             &db_pool,
             user_id.0 as i64,
             &username,
-            message
-                .thread_id
-                .map_or_else(|| chat_id.0, |id| id as i64),
+            message.thread_id.map_or_else(|| chat_id.0, |id| id as i64),
         )
         .await;
     }

@@ -1,5 +1,5 @@
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
-use crate::chat_gpt_handler::ChatMessageRole::{System, User};
+use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
 use crate::{chat_gpt_repository, GPTParameters};
 use lazy_static::lazy_static;
 use log::{error, info};
@@ -72,9 +72,19 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: GP
         bot_configuration.gpt_system_context,
     )
     .await;
-    let chat_response = chat_gpt_call(gpt_parameters.chat_gpt_api_token, context)
-        .await
-        .expect("can't fetch gpt response");
+    let chat_response = match chat_gpt_call(gpt_parameters.chat_gpt_api_token, context).await {
+        Ok(response) => response,
+        Err(err) => {
+            error!("Can't execute chat_gpt_call: {}", err);
+            Vec::from([Choice {
+                message: ChatMessage {
+                    role: Assistant,
+                    content: "Братан, давай папазжей, занят сейчас.".to_string(),
+                },
+            }])
+        }
+    };
+
     let gpt_response_message = &chat_response[0].message;
     let gpt_response_content = &gpt_response_message.content;
 
@@ -101,16 +111,21 @@ async fn fetch_bot_context(
     user_message: &ChatMessage,
     bot_system_context: &str,
 ) -> Vec<ChatMessage> {
-    let mut context =
-        chat_gpt_repository::get_context(&gpt_parameters.redis_connection, context_key)
-            .await
-            .expect("Couldn't get context from Redis");
-    context.push(ChatMessage {
+    let system_message = ChatMessage {
         role: System,
         content: bot_system_context.to_string(),
-    });
-    context.push(user_message.clone());
-    context
+    };
+    match chat_gpt_repository::get_context(&gpt_parameters.redis_connection, context_key).await {
+        Ok(mut context) => {
+            context.push(system_message);
+            context.push(user_message.clone());
+            context
+        }
+        Err(e) => {
+            error!("Can't fetch context from Redis: {}", e);
+            Vec::from([system_message, user_message.clone()])
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -178,7 +193,6 @@ struct ChatResponse {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct Choice {
     message: ChatMessage,
-    finish_reason: Option<String>,
 }
 
 async fn chat_gpt_call(
