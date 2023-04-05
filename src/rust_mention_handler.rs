@@ -44,24 +44,30 @@ pub async fn handle_rust_matched_mention(
     {
         // pool the latest mention time from db
         let chat_id = message.chat.id;
-        let last_mention_time =
-            mention_repository::lead_earliest_mention_time(&db_pool, chat_id.0).await;
-        let last_update_time = Utc.from_utc_datetime(&last_mention_time);
-        info!("latest update time: {}", last_update_time);
+        if let Ok(last_mention_time) =
+            mention_repository::lead_earliest_mention_time(&db_pool, chat_id.0)
+                .await
+                .map_err(|err| error!("Can't insert mention: {:?}", err))
+        {
+            let last_update_time = Utc.from_utc_datetime(&last_mention_time);
+            info!("latest update time: {}", last_update_time);
 
-        let time_diff = curr_date.signed_duration_since(last_update_time);
-        if chat_id.0 != RUST_CHAT && time_diff > req_time_diff {
-            let message_ids = (message.id, chat_id, message.thread_id.unwrap_or(0));
-            send_rust_mention_response(bot, message_ids, time_diff, &username).await;
+            let time_diff = curr_date.signed_duration_since(last_update_time);
+            if time_diff > req_time_diff && chat_id.0 != RUST_CHAT {
+                let message_ids = (message.id, chat_id, message.thread_id.unwrap_or(0));
+                send_rust_mention_response(bot, message_ids, time_diff, &username).await;
+            }
+
+            mention_repository::insert_mention(
+                &db_pool,
+                user_id.0 as i64,
+                &username,
+                message.thread_id.map_or_else(|| chat_id.0, |id| id as i64),
+            )
+            .await
+            .map_err(|err| error!("Can't insert mention: {:?}", err))
+            .ok();
         }
-
-        mention_repository::insert_mention(
-            &db_pool,
-            user_id.0 as i64,
-            &username,
-            message.thread_id.map_or_else(|| chat_id.0, |id| id as i64),
-        )
-        .await;
     }
 }
 
