@@ -1,28 +1,18 @@
 use crate::chat_gpt_handler::ChatMessage;
-use redis::{aio::MultiplexedConnection, RedisResult};
+use redis::aio::ConnectionManager;
+use redis::{AsyncCommands, RedisResult};
 
 pub async fn get_context(
-    connection: &MultiplexedConnection,
+    connection_manager: &mut ConnectionManager,
     key: &String,
 ) -> RedisResult<Vec<ChatMessage>> {
-    let mut con = connection.clone();
-    redis::cmd("LRANGE")
-        .arg(key)
-        .arg(0)
-        .arg(19)
-        .query_async(&mut con)
-        .await
+    connection_manager.lrange(key, 0, 19).await
 }
 
 pub async fn set_context(
-    connection: &MultiplexedConnection,
+    redis_connection_manager: &mut ConnectionManager,
     key: &String,
     context: Vec<&ChatMessage>,
 ) -> RedisResult<()> {
-    let mut con = connection.clone();
-    redis::cmd("LPUSH")
-        .arg(key)
-        .arg(context)
-        .query_async(&mut con)
-        .await
+    redis_connection_manager.lpush(key, context).await
 }
