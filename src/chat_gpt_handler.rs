@@ -122,6 +122,7 @@ async fn fetch_bot_context(
     match chat_gpt_repository::get_context(&gpt_parameters.redis_connection, context_key).await {
         Ok(mut context) => {
             context.push(system_message);
+            context.reverse();
             context.push(user_message.clone());
             context
         }
