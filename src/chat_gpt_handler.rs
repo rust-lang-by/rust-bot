@@ -3,6 +3,7 @@ use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
 use crate::{chat_gpt_repository, GPTParameters};
 use lazy_static::lazy_static;
 use log::{error, info};
+use redis::aio::ConnectionManager;
 use redis::{FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
 use regex::Regex;
 use reqwest::Client;
@@ -55,7 +56,7 @@ lazy_static! {
     ];
 }
 
-pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: GPTParameters) {
+pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters: GPTParameters) {
     let chat_id = msg.chat.id;
     let message = msg.text().expect("can't parse incoming message");
     info!("gpt invocation: chat_id: {}, message: {}", chat_id, message);
@@ -69,7 +70,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: GP
         .unwrap_or(&BOT_PROFILES[0]);
     let context_key = &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
     let context = fetch_bot_context(
-        &gpt_parameters,
+        &mut gpt_parameters.redis_connection_manager,
         context_key,
         &user_message,
         bot_configuration.gpt_system_context,
@@ -100,7 +101,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: GP
 
     let context_update = Vec::from([&user_message, gpt_response_message]);
     chat_gpt_repository::set_context(
-        &gpt_parameters.redis_connection,
+        &mut gpt_parameters.redis_connection_manager,
         context_key,
         context_update,
     )
@@ -110,7 +111,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: GP
 }
 
 async fn fetch_bot_context(
-    gpt_parameters: &GPTParameters,
+    redis_connection_manager: &mut ConnectionManager,
     context_key: &String,
     user_message: &ChatMessage,
     bot_system_context: &str,
@@ -119,7 +120,7 @@ async fn fetch_bot_context(
         role: System,
         content: bot_system_context.to_string(),
     };
-    match chat_gpt_repository::get_context(&gpt_parameters.redis_connection, context_key).await {
+    match chat_gpt_repository::get_context(redis_connection_manager, context_key).await {
         Ok(mut context) => {
             context.push(system_message);
             context.reverse();

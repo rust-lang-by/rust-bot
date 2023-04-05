@@ -2,7 +2,7 @@ use std::env;
 
 use chrono::Duration;
 use log::info;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{PgPool, Pool, Postgres};
 use teloxide::prelude::*;
@@ -33,13 +33,11 @@ async fn run() {
         env::var("CHAT_GPT_API_TOKEN").expect("CHAT_GPT_API_TOKEN must be set");
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");
     let redis_client = redis::Client::open(redis_url).unwrap();
-    let redis_connection = redis_client
-        .get_multiplexed_tokio_connection()
-        .await
-        .unwrap();
+    let redis_connection_manager = ConnectionManager::new(redis_client.clone()).await.unwrap();
+
     let gpt_parameters = GPTParameters {
         chat_gpt_api_token,
-        redis_connection,
+        redis_connection_manager,
     };
     let mention_parameters = MentionParameters {
         rust_regex: Regex::new(RUST_REGEX).expect("Can't compile regex"),
@@ -114,7 +112,7 @@ struct MentionParameters {
 #[derive(Clone)]
 pub struct GPTParameters {
     chat_gpt_api_token: String,
-    redis_connection: MultiplexedConnection,
+    redis_connection_manager: ConnectionManager,
 }
 
 #[cfg(test)]
