@@ -66,7 +66,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: GP
     let bot_configuration = BOT_PROFILES
         .iter()
         .find(|&x| x.is_correct_config(message))
-        .expect("Couldn't find bot configuration");
+        .unwrap_or(&BOT_PROFILES[0]);
     let context_key = &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
     let context = fetch_bot_context(
         &gpt_parameters,
@@ -105,7 +105,8 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: GP
         context_update,
     )
     .await
-    .expect("can't set context");
+    .map_err(|err| error!("Can't update context in Redis: {:?}", err))
+    .ok();
 }
 
 async fn fetch_bot_context(
