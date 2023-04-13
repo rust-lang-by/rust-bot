@@ -6,9 +6,12 @@ services:
       context: .
     environment:
       - TELOXIDE_TOKEN=token
-      - DATABASE_URL=jdbc:postgresql://docker:password@postgres:5432/postgres
+      - CHAT_GPT_API_TOKEN=gpt-token
+      - DATABASE_URL=postgresql://docker:password@localhost:5432/postgres
+      - REDIS_URL=redis://default:redispw@localhost:55001
     depends_on:
       - postgres
+      - redis
 
   postgres:
     image: postgres:13.2
