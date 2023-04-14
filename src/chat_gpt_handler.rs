@@ -77,18 +77,19 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
         bot_configuration.gpt_system_context,
     )
     .await;
-    let chat_response = match chat_gpt_call(gpt_parameters.chat_gpt_api_token, context).await {
-        Ok(response) => response,
-        Err(err) => {
-            error!("Can't execute chat_gpt_call: {}", err);
-            Vec::from([Choice {
-                message: ChatMessage {
-                    role: Assistant,
-                    content: "Братан, давай папазжей, занят сейчас.".to_string(),
-                },
-            }])
-        }
-    };
+    let chat_response =
+        match chat_gpt_call(gpt_parameters.chat_gpt_api_token, chat_id, context).await {
+            Ok(response) => response,
+            Err(err) => {
+                error!("Can't execute chat_gpt_call: {}", err);
+                Vec::from([Choice {
+                    message: ChatMessage {
+                        role: Assistant,
+                        content: "Братан, давай папазжей, занят сейчас.".to_string(),
+                    },
+                }])
+            }
+        };
 
     let gpt_response_message = &chat_response[0].message;
     let gpt_response_content = &gpt_response_message.content;
@@ -117,14 +118,17 @@ async fn fetch_bot_context(
     user_message: &ChatMessage,
     bot_system_context: &str,
 ) -> Vec<ChatMessage> {
-    info!("fetch bot context for context_key: {}", context_key);
+    info!("fetching bot context for context_key: {}", context_key);
     let system_message = ChatMessage {
         role: System,
         content: bot_system_context.to_string(),
     };
     match chat_gpt_repository::get_context(redis_connection_manager, context_key).await {
         Ok(mut context) => {
-            info!("fetch bot context for context_key: {} completed", context_key);
+            info!(
+                "fetch bot context for context_key: {} completed",
+                context_key
+            );
             context.push(system_message);
             context.reverse();
             context.push(user_message.clone());
@@ -206,9 +210,10 @@ struct Choice {
 
 async fn chat_gpt_call(
     api_key: String,
+    chat_id: ChatId,
     messages: Vec<ChatMessage>,
 ) -> Result<Vec<Choice>, Box<dyn std::error::Error>> {
-    info!("execute gpt call");
+    info!("gpt call invocation from chat_id {}", chat_id);
     let client = Client::builder().build()?;
     let chat_request = ChatRequest {
         messages,
@@ -225,6 +230,6 @@ async fn chat_gpt_call(
         .await?
         .json::<ChatResponse>()
         .await?;
-    info!("gpt call completed");
+    info!("gpt call invocation for chat_id {} completed", chat_id);
     Ok(response.choices)
 }
