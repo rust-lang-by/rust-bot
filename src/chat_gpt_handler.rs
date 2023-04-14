@@ -126,7 +126,7 @@ async fn fetch_bot_context(
     match chat_gpt_repository::get_context(redis_connection_manager, context_key).await {
         Ok(mut context) => {
             info!(
-                "fetch bot context for context_key: {} completed",
+                "fetching bot context for context_key: {} completed",
                 context_key
             );
             context.push(system_message);
