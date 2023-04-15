@@ -5,7 +5,7 @@ use tokio::io;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
 
-const REDIS_TIMEOUT: Duration = Duration::from_secs(3);
+const REDIS_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub async fn get_context(
     connection_manager: &mut ConnectionManager,
@@ -19,7 +19,7 @@ pub async fn set_context(
     key: &String,
     context: Vec<&ChatMessage>,
 ) -> RedisResult<()> {
-    timeout_cmd(REDIS_TIMEOUT, redis_connection_manager.lpush(key, context)).await
+    redis_connection_manager.lpush(key, context).await
 }
 
 #[inline]
