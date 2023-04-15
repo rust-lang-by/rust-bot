@@ -5,7 +5,7 @@ use tokio::io;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
 
-const REDIS_TIMEOUT: Duration = Duration::from_secs(1);
+const REDIS_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub async fn get_context(
     connection_manager: &mut ConnectionManager,
