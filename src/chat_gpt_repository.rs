@@ -11,7 +11,7 @@ pub async fn get_context(
     connection_manager: &mut ConnectionManager,
     key: &String,
 ) -> RedisResult<Vec<ChatMessage>> {
-    timeout_cmd(REDIS_TIMEOUT, connection_manager.lrange(key, 0, 19)).await
+    timeout_cmd(REDIS_TIMEOUT, connection_manager.lrange(key, 0, 11)).await
 }
 
 pub async fn set_context(

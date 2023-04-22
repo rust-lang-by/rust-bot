@@ -132,6 +132,7 @@ async fn fetch_bot_context(
             context.push(system_message);
             context.reverse();
             context.push(user_message.clone());
+            info!("context for context_key: {} is {:#?}", context_key, context);
             context
         }
         Err(err) => {
