@@ -10,11 +10,13 @@ use teloxide::prelude::*;
 mod bf_mention_handler;
 mod chat_gpt_handler;
 mod chat_gpt_repository;
+mod gayness_handler;
 mod mention_repository;
 mod rust_mention_handler;
 
 const RUST_REGEX: &str = r"(?i)(rust|раст)";
 const BLAZING_FAST_REGEX: &str = r"\w*[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
+const GAYNESS_REGEX: &str = r"[0-4]\d%";
 const CHAT_GPT_REGEX: &str = r"(?i)(fedor|ф[её]дор|федя|felix|феликс|feris|ferris|ферис|феррис)";
 const MIN_TIME_DIFF: i64 = 15;
 
@@ -42,6 +44,7 @@ async fn run() {
     let mention_parameters = MentionParameters {
         rust_regex: Regex::new(RUST_REGEX).expect("Can't compile regex"),
         blazing_fast_regex: Regex::new(BLAZING_FAST_REGEX).expect("Can't compile regex"),
+        gayness_regex: Regex::new(GAYNESS_REGEX).expect("Can't compile regex"),
         chat_gpt_regex: Regex::new(CHAT_GPT_REGEX).expect("Can't compile regex"),
         req_time_diff: Duration::minutes(MIN_TIME_DIFF),
     };
@@ -74,6 +77,9 @@ async fn run() {
                             m if mention_parameters.blazing_fast_regex.is_match(m) => {
                                 bf_mention_handler::handle_bf_matched_mention(bot, msg).await
                             }
+                            m if mention_parameters.gayness_regex.is_match(m) => {
+                                gayness_handler::handle_gayness_mention(bot, msg).await
+                            }
                             _ => {}
                         }
                     }
@@ -105,6 +111,7 @@ async fn establish_connection() -> Pool<Postgres> {
 struct MentionParameters {
     rust_regex: Regex,
     blazing_fast_regex: Regex,
+    gayness_regex: Regex,
     chat_gpt_regex: Regex,
     req_time_diff: Duration,
 }
