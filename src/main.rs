@@ -16,7 +16,7 @@ mod rust_mention_handler;
 
 const RUST_REGEX: &str = r"(?i)(rust|раст)";
 const BLAZING_FAST_REGEX: &str = r"\w*[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
-const GAYNESS_REGEX: &str = r"[0-4]\d?%";
+const GAYNESS_REGEX: &str = r"[0-4]\d%|\D\d%";
 const CHAT_GPT_REGEX: &str = r"(?i)(fedor|ф[её]дор|федя|felix|феликс|feris|ferris|ферис|феррис)";
 const MIN_TIME_DIFF: i64 = 15;
 
