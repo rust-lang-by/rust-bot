@@ -19,7 +19,7 @@ pub async fn handle_gayness_mention(bot: Bot, msg: Message) {
             .ok();
         bot.send_message(
             chat_id,
-            "Think about your low gayness in 3-hours mute 😒".to_string(),
+            "Think about your low 🏳️‍🌈 in 3-hours mute 😒".to_string(),
         )
         .reply_to_message_id(msg.id)
         .message_thread_id(msg.thread_id.unwrap_or(0))
