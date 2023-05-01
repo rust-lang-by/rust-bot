@@ -12,19 +12,51 @@ pub async fn handle_gayness_mention(bot: Bot, msg: Message) {
         ..
     }) = msg.kind
     {
+        let mute_duration: Duration = calculate_mute_duration(msg.text());
         bot.restrict_chat_member(chat_id, user_id, ChatPermissions::empty())
-            .until_date(Utc::now() + Duration::hours(3))
+            .until_date(Utc::now() + mute_duration)
             .await
             .map_err(|err| error!("Can't apply restriction: {:?}", err))
             .ok();
         bot.send_message(
             chat_id,
-            "Think about your low 🏳️‍🌈 in 3-hours mute 😒".to_string(),
+            format!("Think about your low 🏳️‍🌈 in {:?} mute 😒", mute_duration),
         )
         .reply_to_message_id(msg.id)
         .message_thread_id(msg.thread_id.unwrap_or(0))
         .await
         .map_err(|err| error!("Can't send reply: {:?}", err))
         .ok();
+    }
+}
+
+fn calculate_mute_duration(message: Option<&str>) -> Duration {
+    match message {
+        Some(msg) => {
+            match parse_percentage(msg) {
+                Some(_x @ 0..=9) => Duration::hours(3),
+                Some(_x @ 10..=19) => Duration::hours(2),
+                Some(_x @ 20..=29) => Duration::hours(1),
+                Some(_x @ 30..=39) => Duration::minutes(30),
+                _ => Duration::minutes(15),
+            }
+        }
+        None => Duration::hours(24),
+    }
+}
+
+fn parse_percentage(msg: &str) -> Option<u32> {
+    let percentage_index = msg.find('%')?;
+    msg[percentage_index-2..percentage_index].parse::<u32>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::gayness_handler::parse_percentage;
+
+    #[test]
+    fn test_percentage_parsing() {
+        assert_eq!(parse_percentage("I am 97% human!"), Some(97));
+        assert_eq!(parse_percentage("foo"), None);
     }
 }
