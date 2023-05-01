@@ -20,7 +20,7 @@ pub async fn handle_gayness_mention(bot: Bot, msg: Message) {
             .ok();
         bot.send_message(
             chat_id,
-            format!("Think about your low 🏳️‍🌈 in {:?} mute 😒", mute_duration),
+            format!("Think about your low 🏳️‍🌈 in {:?} minutes mute 😒", mute_duration.num_minutes()),
         )
         .reply_to_message_id(msg.id)
         .message_thread_id(msg.thread_id.unwrap_or(0))
@@ -47,7 +47,8 @@ fn calculate_mute_duration(message: Option<&str>) -> Duration {
 
 fn parse_percentage(msg: &str) -> Option<u32> {
     let percentage_index = msg.find('%')?;
-    msg[percentage_index-2..percentage_index].parse::<u32>().ok()
+    let first_number_index = msg.find(char::is_numeric)?;
+    msg[first_number_index..percentage_index].parse::<u32>().ok()
 }
 
 #[cfg(test)]
@@ -57,6 +58,7 @@ mod tests {
     #[test]
     fn test_percentage_parsing() {
         assert_eq!(parse_percentage("I am 97% human!"), Some(97));
+        assert_eq!(parse_percentage("I am 8% human!"), Some(8));
         assert_eq!(parse_percentage("foo"), None);
     }
 }
