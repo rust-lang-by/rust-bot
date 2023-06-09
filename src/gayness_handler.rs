@@ -20,7 +20,10 @@ pub async fn handle_gayness_mention(bot: Bot, msg: Message) {
             .ok();
         bot.send_message(
             chat_id,
-            format!("Think about your low 🏳️‍🌈 in {:?} minutes mute 😒", mute_duration.num_minutes()),
+            format!(
+                "Think about your low 🏳️‍🌈 in {:?} minutes mute 😒",
+                mute_duration.num_minutes()
+            ),
         )
         .reply_to_message_id(msg.id)
         .message_thread_id(msg.thread_id.unwrap_or(0))
@@ -32,16 +35,15 @@ pub async fn handle_gayness_mention(bot: Bot, msg: Message) {
 
 fn calculate_mute_duration(message: Option<&str>) -> Duration {
     match message {
-        Some(msg) => {
-            match parse_percentage(msg) {
-                Some(_x @ 0...1) => Duration::hours(24),
-                Some(_x @ 1..=9) => Duration::hours(5),
-                Some(_x @ 10..=19) => Duration::hours(3),
-                Some(_x @ 20..=29) => Duration::hours(2),
-                Some(_x @ 30..=39) => Duration::hours(1),
-                _ => Duration::minutes(30),
-            }
-        }
+        Some(msg) => match parse_percentage(msg) {
+            Some(_x @ 0..=0) => Duration::hours(24),
+            Some(_x @ 1..=5) => Duration::hours(10),
+            Some(_x @ 6..=9) => Duration::hours(5),
+            Some(_x @ 10..=19) => Duration::hours(3),
+            Some(_x @ 20..=29) => Duration::hours(2),
+            Some(_x @ 30..=39) => Duration::hours(1),
+            _ => Duration::minutes(30),
+        },
         None => Duration::hours(24),
     }
 }
@@ -49,7 +51,9 @@ fn calculate_mute_duration(message: Option<&str>) -> Duration {
 fn parse_percentage(msg: &str) -> Option<u32> {
     let percentage_index = msg.find('%')?;
     let first_number_index = msg.find(char::is_numeric)?;
-    msg[first_number_index..percentage_index].parse::<u32>().ok()
+    msg[first_number_index..percentage_index]
+        .parse::<u32>()
+        .ok()
 }
 
 #[cfg(test)]
