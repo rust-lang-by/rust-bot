@@ -34,7 +34,8 @@ fn calculate_mute_duration(message: Option<&str>) -> Duration {
     match message {
         Some(msg) => {
             match parse_percentage(msg) {
-                Some(_x @ 0..=9) => Duration::hours(5),
+                Some(_x @ 0...1) => Duration::hours(24),
+                Some(_x @ 1..=9) => Duration::hours(5),
                 Some(_x @ 10..=19) => Duration::hours(3),
                 Some(_x @ 20..=29) => Duration::hours(2),
                 Some(_x @ 30..=39) => Duration::hours(1),
