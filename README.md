@@ -25,4 +25,6 @@ Telegram bot triggered by rust word.
    
 4. Build and run application
 
-   ```$ cargo run```
+```shell
+ cargo run
+```
