@@ -26,7 +26,7 @@ pub async fn handle_rust_matched_mention(
 ) {
     let message_date = message.date.timestamp();
     let curr_native_date = NaiveDateTime::from_timestamp_opt(message_date, 0).unwrap();
-    let curr_date: DateTime<Utc> = DateTime::from_utc(curr_native_date, Utc);
+    let curr_date: DateTime<Utc> = Utc.from_utc_datetime(&curr_native_date);
     info!(
         "rust mention invocation: chat_id: {}, time: {}",
         message.chat.id, curr_date
