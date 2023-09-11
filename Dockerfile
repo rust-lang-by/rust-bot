@@ -1,8 +1,21 @@
-FROM rust:latest AS build-env
+FROM redhat/ubi9:9.2 as ubi-base
+ARG micromount=/mnt/rootfs
+RUN mkdir -p $micromount
+RUN yum install \
+    --installroot $micromount \
+    --releasever 9 \
+    --setopt install_weak_deps=false \
+    --nodocs -y \
+    openssl
+RUN yum clean all \
+    --installroot $micromount
+
+FROM rust:1.72.0 AS build-env
 WORKDIR /app
 COPY . /app
 RUN cargo build --release
 
-FROM gcr.io/distroless/cc@sha256:b53fbf5f81f4a120a489fedff2092e6fcbeacf7863fce3e45d99cc58dc230ccc
+FROM redhat/ubi9-micro:9.2
+COPY --from=ubi-base $micromount /
 COPY --from=build-env /app/target/release/rust-bot ./
 CMD ["/rust-bot"]
