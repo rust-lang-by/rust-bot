@@ -5,7 +5,7 @@ services:
     build:
       context: .
     environment:
-      - TELOXIDE_TOKEN=token
+      - TELOXIDE_TOKEN=${TELEGRAM_BOT_TOKEN_TEST}
       - CHAT_GPT_API_TOKEN=gpt-token
       - DATABASE_URL=postgresql://docker:password@localhost:5432/postgres
       - REDIS_URL=redis://default:redispw@localhost:6379
