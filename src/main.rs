@@ -9,7 +9,8 @@ use teloxide::prelude::*;
 
 mod bf_mention_handler;
 mod chat_gpt_handler;
-mod chat_gpt_repository;
+mod chat_repository;
+mod default_handler;
 mod gayness_handler;
 mod mention_repository;
 mod rust_mention_handler;
@@ -80,7 +81,7 @@ async fn run() {
                             m if mention_parameters.gayness_regex.is_match(m) => {
                                 gayness_handler::handle_gayness_mention(bot, msg).await
                             }
-                            _ => {}
+                            _ => default_handler::handle_default(msg, gpt_parameters).await,
                         }
                     }
                     respond(())

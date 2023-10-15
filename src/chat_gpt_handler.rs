@@ -1,6 +1,6 @@
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
-use crate::{chat_gpt_repository, GPTParameters};
+use crate::{chat_repository, GPTParameters};
 use lazy_static::lazy_static;
 use log::{error, info};
 use redis::aio::ConnectionManager;
@@ -102,7 +102,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
         .ok();
 
     let context_update = Vec::from([&user_message, gpt_response_message]);
-    chat_gpt_repository::set_context(
+    chat_repository::push_context(
         &mut gpt_parameters.redis_connection_manager,
         context_key,
         context_update,
@@ -123,7 +123,7 @@ async fn fetch_bot_context(
         role: System,
         content: bot_system_context.to_string(),
     };
-    match chat_gpt_repository::get_context(redis_connection_manager, context_key).await {
+    match chat_repository::get_context(redis_connection_manager, context_key).await {
         Ok(mut context) => {
             info!(
                 "fetching bot context for context_key: {} completed",

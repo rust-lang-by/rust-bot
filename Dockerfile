@@ -1,4 +1,4 @@
-FROM redhat/ubi9:9.2-755.1696514207 as ubi-base
+FROM redhat/ubi9:9.2-755.1696514207 AS ubi-base
 ARG micromount=/mnt/rootfs
 RUN mkdir -p $micromount
 RUN yum install \
