@@ -14,7 +14,7 @@ pub async fn get_context(
     timeout_cmd(REDIS_TIMEOUT, connection_manager.lrange(key, 0, 11)).await
 }
 
-pub async fn set_context(
+pub async fn push_context(
     redis_connection_manager: &mut ConnectionManager,
     key: &String,
     context: Vec<&ChatMessage>,
@@ -22,11 +22,16 @@ pub async fn set_context(
     redis_connection_manager.lpush(key, context).await
 }
 
+pub async fn push_msg(
+    redis_connection_manager: &mut ConnectionManager,
+    key: i64,
+    msg: String,
+) -> RedisResult<()> {
+    redis_connection_manager.lpush(key, msg).await
+}
+
 #[inline]
-pub async fn timeout_cmd<T>(
-    duration: Duration,
-    future: redis::RedisFuture<'_, T>,
-) -> RedisResult<T> {
+async fn timeout_cmd<T>(duration: Duration, future: redis::RedisFuture<'_, T>) -> RedisResult<T> {
     timeout(duration, future)
         .await
         .map_err(redis_error_from_elapsed)
@@ -34,6 +39,6 @@ pub async fn timeout_cmd<T>(
 }
 
 #[inline]
-pub fn redis_error_from_elapsed(_: Elapsed) -> redis::RedisError {
+fn redis_error_from_elapsed(_: Elapsed) -> redis::RedisError {
     redis::RedisError::from(io::Error::from(io::ErrorKind::TimedOut))
 }
