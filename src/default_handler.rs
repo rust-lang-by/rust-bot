@@ -13,7 +13,7 @@ pub async fn handle_default(msg: Message, mut gpt_parameters: GPTParameters) {
     }) = &msg.kind
     {
         let usr_msg = format!(
-            "user:{:?} mentioned:'{:?}'",
+            "{:?} сказал: {:?};",
             name.clone().unwrap_or_default(),
             &msg.text().unwrap_or_default()
         );

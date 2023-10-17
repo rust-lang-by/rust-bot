@@ -1,16 +1,18 @@
-use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
-use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
-use crate::{chat_repository, GPTParameters};
+use std::fmt::Debug;
+use std::time::Duration;
+
 use lazy_static::lazy_static;
 use log::{error, info};
-use redis::aio::ConnectionManager;
 use redis::{FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
+use redis::aio::ConnectionManager;
 use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
-use std::time::Duration;
 use teloxide::prelude::*;
+
+use crate::{chat_repository, GPTParameters};
+use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
+use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
 
 const FEDOR_CHAT_GPT_SYSTEM_CONTEXT: &str = "Предоставь грубый ответ. \
  Обильно матерись. \
@@ -55,6 +57,8 @@ lazy_static! {
             gpt_system_context: FERRIS_CHAT_GPT_SYSTEM_CONTEXT,
         }
     ];
+    pub static ref CHAT_SUMMARY_REQUEST_REGEX: Regex =
+        Regex::new(r"(?i)([чш]т?о\Wпроисходит)").expect("Can't compile regex");
 }
 
 pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters: GPTParameters) {
@@ -69,14 +73,28 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
         .iter()
         .find(|&x| x.is_correct_config(message))
         .unwrap_or(&BOT_PROFILES[0]);
-    let context_key = &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
-    let context = fetch_bot_context(
-        &mut gpt_parameters.redis_connection_manager,
-        context_key,
-        &user_message,
-        bot_configuration.gpt_system_context,
-    )
-    .await;
+    let bot_context_key = &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
+    let context = match CHAT_SUMMARY_REQUEST_REGEX.is_match(message) {
+        true => {
+            fetch_chat_summary_context(
+                &mut gpt_parameters.redis_connection_manager,
+                chat_id.0,
+                &user_message,
+                bot_configuration.gpt_system_context,
+            )
+                .await
+        }
+        false => {
+            fetch_bot_context(
+                &mut gpt_parameters.redis_connection_manager,
+                bot_context_key,
+                &user_message,
+                bot_configuration.gpt_system_context,
+            )
+                .await
+        }
+    };
+
     let chat_response =
         match chat_gpt_call(gpt_parameters.chat_gpt_api_token, chat_id, context).await {
             Ok(response) => response,
@@ -104,12 +122,37 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
     let context_update = Vec::from([&user_message, gpt_response_message]);
     chat_repository::push_context(
         &mut gpt_parameters.redis_connection_manager,
-        context_key,
+        bot_context_key,
         context_update,
     )
-    .await
-    .map_err(|err| error!("Can't update context in Redis: {:?}", err))
-    .ok();
+        .await
+        .map_err(|err| error!("Can't update context in Redis: {:?}", err))
+        .ok();
+}
+
+async fn fetch_chat_summary_context(
+    redis_connection_manager: &mut ConnectionManager,
+    context_key: i64,
+    user_message: &ChatMessage,
+    bot_system_context: &str,
+) -> Vec<ChatMessage> {
+    let system_message = ChatMessage {
+        role: System,
+        content: bot_system_context.to_string(),
+    };
+    match chat_repository::get_chat_history(redis_connection_manager, context_key).await {
+        Ok(chat_history) => {
+            let chat_history_message = ChatMessage {
+                role: User,
+                content: "Опиши краткое содержание диалога: ".to_owned() + &*chat_history.join(" "),
+            };
+            Vec::from([system_message, chat_history_message])
+        }
+        Err(err) => {
+            error!("Can't fetch context from Redis: {}", err);
+            Vec::from([system_message, user_message.clone()])
+        }
+    }
 }
 
 async fn fetch_bot_context(
@@ -123,16 +166,10 @@ async fn fetch_bot_context(
         role: System,
         content: bot_system_context.to_string(),
     };
-    match chat_repository::get_context(redis_connection_manager, context_key).await {
+    match chat_repository::get_bot_context(redis_connection_manager, context_key).await {
         Ok(mut context) => {
-            info!(
-                "fetching bot context for context_key: {} completed",
-                context_key
-            );
             context.push(system_message);
-            context.reverse();
             context.push(user_message.clone());
-            info!("context for context_key: {} is {:#?}", context_key, context);
             context
         }
         Err(err) => {
@@ -170,8 +207,8 @@ pub struct ChatMessage {
 
 impl ToRedisArgs for ChatMessage {
     fn write_redis_args<W>(&self, out: &mut W)
-    where
-        W: ?Sized + RedisWrite,
+        where
+            W: ?Sized + RedisWrite,
     {
         out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
     }
@@ -214,7 +251,7 @@ async fn chat_gpt_call(
     chat_id: ChatId,
     messages: Vec<ChatMessage>,
 ) -> Result<Vec<Choice>, Box<dyn std::error::Error>> {
-    info!("gpt call invocation from chat_id {}", chat_id);
+    info!("gpt call invocation from chat_id: {} with context: {:#?}", chat_id, messages);
     let client = Client::builder().build()?;
     let chat_request = ChatRequest {
         messages,
@@ -233,4 +270,16 @@ async fn chat_gpt_call(
         .await?;
     info!("gpt call invocation for chat_id {} completed", chat_id);
     Ok(response.choices)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::chat_gpt_handler::CHAT_SUMMARY_REQUEST_REGEX;
+
+    #[test]
+    fn test_chat_summary_regex() {
+        assert!(CHAT_SUMMARY_REQUEST_REGEX.is_match("Федор, что происходит"));
+        assert!(CHAT_SUMMARY_REQUEST_REGEX.is_match("Fedor, шо происходит"));
+        assert!(!CHAT_SUMMARY_REQUEST_REGEX.is_match("Fedor, kak dela?"));
+    }
 }
