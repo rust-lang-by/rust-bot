@@ -1,5 +1,5 @@
-use log::info;
 use crate::chat_gpt_handler::ChatMessage;
+use log::info;
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, RedisResult};
 use tokio::io;

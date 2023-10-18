@@ -3,16 +3,16 @@ use std::time::Duration;
 
 use lazy_static::lazy_static;
 use log::{error, info};
-use redis::{FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
 use redis::aio::ConnectionManager;
+use redis::{FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
 use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use teloxide::prelude::*;
 
-use crate::{chat_repository, GPTParameters};
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
+use crate::{chat_repository, GPTParameters};
 
 const FEDOR_CHAT_GPT_SYSTEM_CONTEXT: &str = "Предоставь грубый ответ. \
  Обильно матерись. \
@@ -82,7 +82,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
                 &user_message,
                 bot_configuration.gpt_system_context,
             )
-                .await
+            .await
         }
         false => {
             fetch_bot_context(
@@ -91,7 +91,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
                 &user_message,
                 bot_configuration.gpt_system_context,
             )
-                .await
+            .await
         }
     };
 
@@ -125,9 +125,9 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
         bot_context_key,
         context_update,
     )
-        .await
-        .map_err(|err| error!("Can't update context in Redis: {:?}", err))
-        .ok();
+    .await
+    .map_err(|err| error!("Can't update context in Redis: {:?}", err))
+    .ok();
 }
 
 async fn fetch_chat_summary_context(
@@ -168,9 +168,8 @@ async fn fetch_bot_context(
     };
     match chat_repository::get_bot_context(redis_connection_manager, context_key).await {
         Ok(mut context) => {
-            context.push(system_message);
             context.push(user_message.clone());
-            context
+            [Vec::from([system_message]), context].concat()
         }
         Err(err) => {
             error!("Can't fetch context from Redis: {}", err);
@@ -207,8 +206,8 @@ pub struct ChatMessage {
 
 impl ToRedisArgs for ChatMessage {
     fn write_redis_args<W>(&self, out: &mut W)
-        where
-            W: ?Sized + RedisWrite,
+    where
+        W: ?Sized + RedisWrite,
     {
         out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
     }
@@ -251,7 +250,10 @@ async fn chat_gpt_call(
     chat_id: ChatId,
     messages: Vec<ChatMessage>,
 ) -> Result<Vec<Choice>, Box<dyn std::error::Error>> {
-    info!("gpt call invocation from chat_id: {} with context: {:#?}", chat_id, messages);
+    info!(
+        "gpt call invocation from chat_id: {} with context: {:#?}",
+        chat_id, messages
+    );
     let client = Client::builder().build()?;
     let chat_request = ChatRequest {
         messages,
