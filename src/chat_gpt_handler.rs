@@ -39,6 +39,7 @@ const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(100);
 const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
 
 static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
+const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш]т?о\Wпроисходит)";
 static CHAT_SUMMARY_REQUEST_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters: GPTParameters) {
@@ -76,7 +77,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
         .unwrap_or(&bot_profiles[0]);
     let bot_context_key = &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
     let summary_request_regex = CHAT_SUMMARY_REQUEST_REGEX
-        .get_or_init(|| Regex::new(r"(?i)([чш]т?о\Wпроисходит)").expect("Can't compile regex"));
+        .get_or_init(|| Regex::new(SUMMARY_REQUEST_REGEX).expect("Can't compile regex"));
     let context = match summary_request_regex.is_match(message) {
         true => {
             fetch_chat_summary_context(
@@ -277,3 +278,16 @@ async fn chat_gpt_call(
     Ok(response.choices)
 }
 
+#[cfg(test)]
+mod tests {
+    use regex::Regex;
+    use crate::chat_gpt_handler::SUMMARY_REQUEST_REGEX;
+
+    #[test]
+    fn test_chat_summary_regex() {
+        let summary_regex = Regex::new(SUMMARY_REQUEST_REGEX).unwrap();
+        assert!(summary_regex.is_match("Федор, что происходит"));
+        assert!(summary_regex.is_match("Fedor, шо происходит"));
+        assert!(!summary_regex.is_match("Fedor, kak dela?"));
+    }
+}
