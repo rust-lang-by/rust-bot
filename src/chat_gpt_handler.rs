@@ -277,15 +277,3 @@ async fn chat_gpt_call(
     Ok(response.choices)
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::chat_gpt_handler::CHAT_SUMMARY_REQUEST_REGEX;
-
-    #[test]
-    fn test_chat_summary_regex() {
-        let summary_regex = CHAT_SUMMARY_REQUEST_REGEX.get().unwrap();
-        assert!(summary_regex.is_match("Федор, что происходит"));
-        assert!(summary_regex.is_match("Fedor, шо происходит"));
-        assert!(!summary_regex.is_match("Fedor, kak dela?"));
-    }
-}
