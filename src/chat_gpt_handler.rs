@@ -1,7 +1,7 @@
 use std::fmt::Debug;
+use std::sync::OnceLock;
 use std::time::Duration;
 
-use lazy_static::lazy_static;
 use log::{error, info};
 use redis::aio::ConnectionManager;
 use redis::{FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
@@ -38,28 +38,9 @@ const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комью
 const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(100);
 const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
 
-lazy_static! {
-    static ref BOT_PROFILES: Vec<BotConfiguration<'static>> = vec![
-        BotConfiguration {
-            profile: Fedor,
-            mention_regex: Regex::new(r"(?i)(fedor|ф[её]дор|федя)").expect("Can't compile regex"),
-            gpt_system_context: FEDOR_CHAT_GPT_SYSTEM_CONTEXT,
-        },
-        BotConfiguration {
-            profile: Felix,
-            mention_regex: Regex::new(r"(?i)(felix|феликс)").expect("Can't compile regex"),
-            gpt_system_context: FELIX_CHAT_GPT_SYSTEM_CONTEXT,
-        },
-        BotConfiguration {
-            profile: Ferris,
-            mention_regex: Regex::new(r"(?i)(feris|ferris|ферис|феррис)")
-                .expect("Can't compile regex"),
-            gpt_system_context: FERRIS_CHAT_GPT_SYSTEM_CONTEXT,
-        }
-    ];
-    pub static ref CHAT_SUMMARY_REQUEST_REGEX: Regex =
-        Regex::new(r"(?i)([чш]т?о\Wпроисходит)").expect("Can't compile regex");
-}
+static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
+const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш]т?о\Wпроисходит)";
+static CHAT_SUMMARY_REQUEST_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters: GPTParameters) {
     let chat_id = msg.chat.id;
@@ -69,12 +50,35 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
         role: User,
         content: message.to_string(),
     };
-    let bot_configuration = BOT_PROFILES
+    let bot_profiles = BOT_PROFILES.get_or_init(|| {
+        vec![
+            BotConfiguration {
+                profile: Fedor,
+                mention_regex: Regex::new(r"(?i)(fedor|ф[её]дор|федя)")
+                    .expect("Can't compile regex"),
+                gpt_system_context: FEDOR_CHAT_GPT_SYSTEM_CONTEXT,
+            },
+            BotConfiguration {
+                profile: Felix,
+                mention_regex: Regex::new(r"(?i)(felix|феликс)").expect("Can't compile regex"),
+                gpt_system_context: FELIX_CHAT_GPT_SYSTEM_CONTEXT,
+            },
+            BotConfiguration {
+                profile: Ferris,
+                mention_regex: Regex::new(r"(?i)(feris|ferris|ферис|феррис)")
+                    .expect("Can't compile regex"),
+                gpt_system_context: FERRIS_CHAT_GPT_SYSTEM_CONTEXT,
+            },
+        ]
+    });
+    let bot_configuration = bot_profiles
         .iter()
         .find(|&x| x.is_correct_config(message))
-        .unwrap_or(&BOT_PROFILES[0]);
+        .unwrap_or(&bot_profiles[0]);
     let bot_context_key = &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
-    let context = match CHAT_SUMMARY_REQUEST_REGEX.is_match(message) {
+    let summary_request_regex = CHAT_SUMMARY_REQUEST_REGEX
+        .get_or_init(|| Regex::new(SUMMARY_REQUEST_REGEX).expect("Can't compile regex"));
+    let context = match summary_request_regex.is_match(message) {
         true => {
             fetch_chat_summary_context(
                 &mut gpt_parameters.redis_connection_manager,
@@ -276,12 +280,14 @@ async fn chat_gpt_call(
 
 #[cfg(test)]
 mod tests {
-    use crate::chat_gpt_handler::CHAT_SUMMARY_REQUEST_REGEX;
+    use regex::Regex;
+    use crate::chat_gpt_handler::SUMMARY_REQUEST_REGEX;
 
     #[test]
     fn test_chat_summary_regex() {
-        assert!(CHAT_SUMMARY_REQUEST_REGEX.is_match("Федор, что происходит"));
-        assert!(CHAT_SUMMARY_REQUEST_REGEX.is_match("Fedor, шо происходит"));
-        assert!(!CHAT_SUMMARY_REQUEST_REGEX.is_match("Fedor, kak dela?"));
+        let summary_regex = Regex::new(SUMMARY_REQUEST_REGEX).unwrap();
+        assert!(summary_regex.is_match("Федор, что происходит"));
+        assert!(summary_regex.is_match("Fedor, шо происходит"));
+        assert!(!summary_regex.is_match("Fedor, kak dela?"));
     }
 }
