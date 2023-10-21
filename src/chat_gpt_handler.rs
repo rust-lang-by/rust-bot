@@ -37,9 +37,8 @@ const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комью
 
 const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(100);
 const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
-
 static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
-const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш]т?о\Wпроисходит)";
+const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш]то?\b.*\bпроисходит)";
 static CHAT_SUMMARY_REQUEST_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters: GPTParameters) {
@@ -280,14 +279,14 @@ async fn chat_gpt_call(
 
 #[cfg(test)]
 mod tests {
-    use regex::Regex;
     use crate::chat_gpt_handler::SUMMARY_REQUEST_REGEX;
+    use regex::Regex;
 
     #[test]
     fn test_chat_summary_regex() {
         let summary_regex = Regex::new(SUMMARY_REQUEST_REGEX).unwrap();
-        assert!(summary_regex.is_match("Федор, что происходит"));
-        assert!(summary_regex.is_match("Fedor, шо происходит"));
+        assert!(summary_regex.is_match("Федор, что происходит?"));
+        assert!(summary_regex.is_match("Фёдор, что тут происходит?"));
         assert!(!summary_regex.is_match("Fedor, kak dela?"));
     }
 }
