@@ -141,7 +141,7 @@ async fn fetch_chat_summary_context(
 ) -> Vec<ChatMessage> {
     let system_message = ChatMessage {
         role: System,
-        content: bot_system_context.to_string() + "Будь краток.",
+        content: bot_system_context.to_string() + " Будь краток. Обобщай.",
     };
     match chat_repository::get_chat_history(redis_connection_manager, context_key).await {
         Ok(chat_history) => {
