@@ -6,7 +6,7 @@ use crate::{chat_repository, GPTParameters};
 
 pub async fn handle_default(msg: Message, mut gpt_parameters: GPTParameters) {
     let chat_id = msg.chat.id;
-    info!("gayness mention invocation: chat_id: {}", chat_id);
+    info!("default handler invocation: chat_id: {}", chat_id);
     if let Common(MessageCommon {
         from: Some(User { username: name, .. }),
         ..
