@@ -1,11 +1,10 @@
+use crate::chat_gpt_handler::ChatMessage;
 use log::info;
 use redis::aio::ConnectionManager;
-use redis::{AsyncCommands, RedisError, RedisResult, Value};
+use redis::{AsyncCommands, RedisResult};
 use tokio::io;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
-
-use crate::chat_gpt_handler::ChatMessage;
 
 const REDIS_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -37,22 +36,8 @@ pub async fn push_msg(
     redis_connection_manager: &mut ConnectionManager,
     key: i64,
     msg: String,
-) -> Result<Vec<Value>, RedisError> {
-    redis_connection_manager
-        .send_packed_commands(
-            redis::pipe()
-                .cmd("RPUSH")
-                .arg(key)
-                .arg(msg)
-                .ignore()
-                .cmd("EXPIRE")
-                .arg(key)
-                .arg(30000)
-                .arg("NX"),
-            1,
-            1,
-        )
-        .await
+) -> RedisResult<()> {
+    redis_connection_manager.rpush(key, msg).await
 }
 
 #[inline]
