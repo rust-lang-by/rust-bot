@@ -13,7 +13,7 @@ pub async fn get_bot_context(
     key: &String,
 ) -> RedisResult<Vec<ChatMessage>> {
     info!("fetching  chat bot context for context_key: {}", key);
-    timeout_cmd(REDIS_TIMEOUT, connection_manager.lrange(key, 0, 11)).await
+    timeout_cmd(connection_manager.lrange(key, 0, 11)).await
 }
 
 pub async fn get_chat_history(
@@ -21,7 +21,7 @@ pub async fn get_chat_history(
     key: i64,
 ) -> RedisResult<Vec<String>> {
     info!("fetching chat history for context_key: {}", key);
-    timeout_cmd(REDIS_TIMEOUT, connection_manager.lrange(key, 0, 20)).await
+    timeout_cmd(connection_manager.lrange(key, 0, 20)).await
 }
 
 pub async fn push_context(
@@ -41,8 +41,8 @@ pub async fn push_msg(
 }
 
 #[inline]
-async fn timeout_cmd<T>(duration: Duration, future: redis::RedisFuture<'_, T>) -> RedisResult<T> {
-    timeout(duration, future)
+async fn timeout_cmd<T>(future: redis::RedisFuture<'_, T>) -> RedisResult<T> {
+    timeout(REDIS_TIMEOUT, future)
         .await
         .map_err(redis_error_from_elapsed)
         .and_then(|v| v)
