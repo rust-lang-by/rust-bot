@@ -21,7 +21,7 @@ pub async fn get_chat_history(
     key: i64,
 ) -> RedisResult<Vec<String>> {
     info!("fetching chat history for context_key: {}", key);
-    timeout_cmd(REDIS_TIMEOUT, connection_manager.lrange(key, 0, 30)).await
+    timeout_cmd(REDIS_TIMEOUT, connection_manager.lrange(key, 0, 20)).await
 }
 
 pub async fn push_context(
