@@ -3,12 +3,17 @@ updates:
   # Maintain dependencies for Cargo
   - package-ecosystem: "cargo"
     directory: "/"
-    target-branch: "develop"
     schedule:
-      interval: "daily"
+      interval: daily
+
   # Maintain dependencies for Docker
   - package-ecosystem: "docker"
     directory: "/"
-    target-branch: "develop"
+    schedule:
+      interval: "daily"
+
+  # Maintain dependencies for Github-actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
       interval: "daily"
