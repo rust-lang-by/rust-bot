@@ -15,7 +15,7 @@ WORKDIR /app
 COPY . /app
 RUN cargo build --release
 
-FROM redhat/ubi9-micro:9.2
+FROM redhat/ubi9-micro:9.3
 COPY --from=ubi-base $micromount /
 COPY --from=build-env /app/target/release/rust-bot ./
 CMD ["/rust-bot"]
