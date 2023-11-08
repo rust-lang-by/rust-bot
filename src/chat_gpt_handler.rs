@@ -260,7 +260,7 @@ async fn chat_gpt_call(
     let client = Client::builder().build()?;
     let chat_request = ChatRequest {
         messages,
-        model: "gpt-3.5-turbo",
+        model: "gpt-3.5-turbo-1106",
         max_tokens: 1000,
     };
     let response = client
