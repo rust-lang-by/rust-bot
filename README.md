@@ -1,8 +1,7 @@
 [![Build and Test](https://github.com/rust-lang-by/rust-bot/actions/workflows/build.yml/badge.svg)](https://github.com/rust-lang-by/rust-bot/actions/workflows/build.yml) [![Deploy](https://github.com/rust-lang-by/rust-bot/actions/workflows/deploy.yml/badge.svg)](https://github.com/rust-lang-by/rust-bot/actions/workflows/deploy.yml)
 
 # rust-bot
-Telegram bot triggered by rust word.
-
+Telegram bot triggered by rust word. And support community interaction.
 
 # How to Run
 
