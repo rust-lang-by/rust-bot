@@ -2,7 +2,7 @@
 
 # rust-bot
 Telegram bot triggered by rust word. And support community interaction.
-Also have OpenAI API.
+Also use OpenAI API.
 
 # How to Run
 
