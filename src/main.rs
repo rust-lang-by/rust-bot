@@ -15,7 +15,7 @@ mod gayness_handler;
 mod mention_repository;
 mod rust_mention_handler;
 
-const RUST_REGEX: &str = r"(^|\W)(?i)(rust|раст)(\W|$)";
+const RUST_REGEX: &str = r"(?i)(rust|раст)(.\W|.$|\W|$)";
 const BLAZING_FAST_REGEX: &str = r"\w*[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
 const GAYNESS_REGEX: &str = r"(\D[0-4]|\D)\d%\Dg";
 const CHAT_GPT_REGEX: &str = r"(?i)(fedor|ф[её]дор|федя|felix|феликс|feris|ferris|ферис|феррис)";
@@ -133,7 +133,7 @@ mod tests {
         let chat_gpt_regex = Regex::new(RUST_REGEX).expect("Can't compile regex");
         assert!(chat_gpt_regex.is_match("test rust test"));
         assert!(chat_gpt_regex.is_match("RusT"));
-        assert!(chat_gpt_regex.is_match("что там раст"));
+        assert!(chat_gpt_regex.is_match("что там у раста"));
         assert!(chat_gpt_regex.is_match("чэ тупо раст тэст"));
     }
 
