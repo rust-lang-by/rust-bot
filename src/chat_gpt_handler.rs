@@ -343,7 +343,7 @@ enum ChatMessageRole {
 }
 
 #[derive(Debug, Deserialize, Serialize, Copy, Clone, Eq, PartialEq)]
-pub enum BotProfile {
+enum BotProfile {
     Fedor,
     Felix,
     Ferris,
@@ -358,7 +358,7 @@ impl ToRedisArgs for BotProfile {
     }
 }
 
-impl FromRedisValue for BotProfile {
+impl FromRedisValue for BotProfile,  {
     fn from_redis_value(v: &Value) -> RedisResult<Self> {
         let str_value: String = FromRedisValue::from_redis_value(v)?;
         Ok(serde_json::from_str(&str_value).expect("Can't deserialize Context as string"))
