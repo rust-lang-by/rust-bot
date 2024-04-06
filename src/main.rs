@@ -63,8 +63,12 @@ async fn run() {
                     if let Some(message) = msg.text() {
                         match message {
                             m if mention_parameters.chat_gpt_regex.is_match(m) => {
-                                chat_gpt_handler::handle_chat_gpt_question(bot, msg, &mut gpt_parameters)
-                                    .await
+                                chat_gpt_handler::handle_chat_gpt_question(
+                                    bot,
+                                    msg,
+                                    &mut gpt_parameters,
+                                )
+                                .await
                             }
                             m if mention_parameters.rust_regex.is_match(m) => {
                                 rust_mention_handler::handle_rust_matched_mention(
@@ -73,7 +77,7 @@ async fn run() {
                                     db_pool,
                                     mention_parameters.req_time_diff,
                                 )
-                                    .await
+                                .await
                             }
                             m if mention_parameters.blazing_fast_regex.is_match(m) => {
                                 bf_mention_handler::handle_bf_matched_mention(bot, msg).await
@@ -83,7 +87,13 @@ async fn run() {
                             }
                             _ => {
                                 if let Some(reply_msg) = &msg.reply_to_message() {
-                                    chat_gpt_handler::handle_reply(&bot, &msg, reply_msg,  &mut gpt_parameters).await;
+                                    chat_gpt_handler::handle_reply(
+                                        &bot,
+                                        &msg,
+                                        reply_msg,
+                                        &mut gpt_parameters,
+                                    )
+                                    .await;
                                 } else {
                                     default_handler::handle_default(msg, gpt_parameters).await
                                 }
