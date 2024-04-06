@@ -1,4 +1,4 @@
-use crate::chat_gpt_handler::ChatMessage;
+use crate::chat_gpt_handler::{BotProfile, ChatMessage};
 use log::info;
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, RedisResult};
@@ -38,6 +38,27 @@ pub async fn push_msg(
     msg: String,
 ) -> RedisResult<()> {
     redis_connection_manager.rpush(key, msg).await
+}
+
+pub async fn push_bot_msg_identifier(
+    redis_connection_manager: &mut ConnectionManager,
+    chat_key: &String,
+    message_key: i32,
+    profile: BotProfile,
+) -> RedisResult<()> {
+    info!("push bot msg identifier for message_key: {}", message_key);
+    redis_connection_manager
+        .hset(chat_key, message_key, profile)
+        .await
+}
+
+pub async fn get_bot_msg_profile(
+    redis_connection_manager: &mut ConnectionManager,
+    chat_key: &String,
+    message_key: i32,
+) -> RedisResult<BotProfile> {
+    info!("get bot profile for message_key: {}", message_key);
+    redis_connection_manager.hget(chat_key, message_key).await
 }
 
 #[inline]
