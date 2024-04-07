@@ -3,6 +3,6 @@ WORKDIR /app
 COPY . /app
 RUN cargo build --release
 
-FROM gcr.io/distroless/cc-debian12@sha256:e6ae66a5a343d7112167f9117c4e630cfffcd80db44e44302759ec13ddd2d22b
+FROM gcr.io/distroless/cc-debian12@sha256:7a01d633f75120af59c71489e0911fa8b6512673a3ff0b999522b4221ab4d86a
 COPY --from=build-env /app/target/release/rust-bot ./
 CMD ["/rust-bot"]
