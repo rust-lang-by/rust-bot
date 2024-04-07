@@ -9,6 +9,7 @@ use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use teloxide::prelude::*;
+use teloxide::RequestError;
 
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
@@ -41,14 +42,10 @@ static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
 const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш].о?\b.*\bпроисходит)";
 static CHAT_SUMMARY_REQUEST_REGEX: OnceLock<Regex> = OnceLock::new();
 
-pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters: GPTParameters) {
+pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &mut GPTParameters) {
     let chat_id = msg.chat.id;
     let message = msg.text().expect("can't parse incoming message");
     info!("gpt invocation: chat_id: {}, message: {}", chat_id, message);
-    let user_message = ChatMessage {
-        role: User,
-        content: message.to_string(),
-    };
     let bot_profiles = BOT_PROFILES.get_or_init(|| {
         vec![
             BotConfiguration {
@@ -75,6 +72,10 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
         .find(|&x| x.is_correct_config(message))
         .unwrap_or(&bot_profiles[0]);
     let bot_context_key = &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
+    let user_message = ChatMessage {
+        role: User,
+        content: message.to_string(),
+    };
     let summary_request_regex = CHAT_SUMMARY_REQUEST_REGEX
         .get_or_init(|| Regex::new(SUMMARY_REQUEST_REGEX).expect("Can't compile regex"));
     let context = match summary_request_regex.is_match(message) {
@@ -98,39 +99,149 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, mut gpt_parameters
         }
     };
 
-    let chat_response =
-        match chat_gpt_call(gpt_parameters.chat_gpt_api_token, chat_id, context).await {
-            Ok(response) => response,
-            Err(err) => {
-                error!("Can't execute chat_gpt_call: {}", err);
-                Vec::from([Choice {
-                    message: ChatMessage {
-                        role: Assistant,
-                        content: "Братан, давай папазжей, занят сейчас.".to_string(),
-                    },
-                }])
-            }
-        };
+    let chat_response = chat_gpt_call(&mut gpt_parameters.chat_gpt_api_token, chat_id, context)
+        .await
+        .unwrap_or_else(|err| {
+            error!("Can't execute chat_gpt_call: {}", err);
+            Vec::from([Choice {
+                message: ChatMessage {
+                    role: Assistant,
+                    content: "Братан, давай папазжей, занят сейчас.".to_string(),
+                },
+            }])
+        });
 
     let gpt_response_message = &chat_response[0].message;
     let gpt_response_content = &gpt_response_message.content;
 
-    bot.send_message(chat_id, gpt_response_content)
+    let bot_reply_msg_response = bot
+        .send_message(chat_id, gpt_response_content)
         .reply_to_message_id(msg.id)
         .message_thread_id(msg.thread_id.unwrap_or(0))
-        .await
-        .map_err(|err| error!("Can't send reply: {:?}", err))
-        .ok();
+        .await;
 
-    let context_update = Vec::from([&user_message, gpt_response_message]);
-    chat_repository::push_context(
+    update_bot_context_and_identifiers(
         &mut gpt_parameters.redis_connection_manager,
+        bot_configuration.profile,
         bot_context_key,
-        context_update,
+        &user_message,
+        gpt_response_message,
+        bot_reply_msg_response,
+    )
+    .await;
+}
+
+async fn update_bot_context_and_identifiers(
+    redis_connection_manager: &mut ConnectionManager,
+    bot_profile: BotProfile,
+    bot_context_key: &String,
+    user_message: &ChatMessage,
+    gpt_response_message: &ChatMessage,
+    bot_reply_msg_response: Result<Message, RequestError>,
+) {
+    match bot_reply_msg_response {
+        Err(err) => error!("Can't send reply: {:?}", err),
+        Ok(bot_reply_msg) => {
+            let context_update = Vec::from([&user_message, gpt_response_message]);
+            chat_repository::push_context(
+                redis_connection_manager,
+                bot_context_key,
+                context_update,
+            )
+            .await
+            .map_err(|err| error!("Can't update context in Redis: {:?}", err))
+            .ok();
+            let chat_key = &format!("chat:{:#?}", bot_reply_msg.chat.id.0);
+            chat_repository::push_bot_msg_identifier(
+                redis_connection_manager,
+                chat_key,
+                bot_reply_msg.id.0,
+                bot_profile,
+            )
+            .await
+            .map_err(|err| error!("Can't update context in Redis: {:?}", err))
+            .ok();
+        }
+    }
+}
+
+pub async fn handle_reply(
+    bot: &Bot,
+    msg: &Message,
+    reply_msg: &Message,
+    gpt_parameters: &mut GPTParameters,
+) {
+    info!("handle reply gpt question");
+    let message = msg.text().expect("can't parse incoming message");
+    let chat_id = msg.chat.id;
+    let chat_key = &format!("chat:{:#?}", chat_id.0);
+    info!("chat_key: {:?}", chat_key);
+    let reply_msg_id = reply_msg.id.0;
+    if let Ok(reply_msg_bot_profile) = chat_repository::get_bot_msg_profile(
+        &mut gpt_parameters.redis_connection_manager,
+        chat_key,
+        reply_msg_id,
     )
     .await
-    .map_err(|err| error!("Can't update context in Redis: {:?}", err))
-    .ok();
+    {
+        info!(
+            "handle msg of bot msg reply_msg_id:'{:#?}' under bot profile:'{:#?}'",
+            reply_msg_id, reply_msg_bot_profile
+        );
+        info!(
+            "truing to reply chat_id:{:#?}, msg_id: {:?}, thread_id: {:#?}",
+            chat_id, msg.id, msg.thread_id
+        );
+        if let Some(bot_profiles) = BOT_PROFILES.get() {
+            let bot_configuration = bot_profiles
+                .iter()
+                .find(|&x| x.profile == reply_msg_bot_profile)
+                .unwrap_or(&bot_profiles[0]);
+            let bot_context_key =
+                &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
+            let user_message = ChatMessage {
+                role: User,
+                content: message.to_string(),
+            };
+            let context = fetch_bot_context(
+                &mut gpt_parameters.redis_connection_manager,
+                bot_context_key,
+                &user_message,
+                bot_configuration.gpt_system_context,
+            )
+            .await;
+
+            let chat_response = chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context)
+                .await
+                .unwrap_or_else(|err| {
+                    error!("Can't execute chat_gpt_call: {}", err);
+                    Vec::from([Choice {
+                        message: ChatMessage {
+                            role: Assistant,
+                            content: "Братан, давай папазжей, занят сейчас.".to_string(),
+                        },
+                    }])
+                });
+
+            let gpt_response_message = &chat_response[0].message;
+            let gpt_response_content = &gpt_response_message.content;
+
+            let bot_reply_msg_response = bot
+                .send_message(chat_id, gpt_response_content)
+                .reply_to_message_id(msg.id)
+                .await;
+
+            update_bot_context_and_identifiers(
+                &mut gpt_parameters.redis_connection_manager,
+                bot_configuration.profile,
+                bot_context_key,
+                &user_message,
+                gpt_response_message,
+                bot_reply_msg_response,
+            )
+            .await;
+        }
+    }
 }
 
 async fn fetch_chat_summary_context(
@@ -231,11 +342,27 @@ enum ChatMessageRole {
     Assistant,
 }
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone)]
-enum BotProfile {
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, Eq, PartialEq)]
+pub(crate) enum BotProfile {
     Fedor,
     Felix,
     Ferris,
+}
+
+impl ToRedisArgs for BotProfile {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + RedisWrite,
+    {
+        out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
+    }
+}
+
+impl FromRedisValue for BotProfile {
+    fn from_redis_value(v: &Value) -> RedisResult<Self> {
+        let str_value: String = FromRedisValue::from_redis_value(v)?;
+        Ok(serde_json::from_str(&str_value).expect("Can't deserialize Context as string"))
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -249,7 +376,7 @@ struct Choice {
 }
 
 async fn chat_gpt_call(
-    api_key: String,
+    api_key: &String,
     chat_id: ChatId,
     messages: Vec<ChatMessage>,
 ) -> Result<Vec<Choice>, Box<dyn std::error::Error>> {

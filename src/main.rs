@@ -58,13 +58,17 @@ async fn run() {
                 |msg: Message,
                  mention_parameters: MentionParameters,
                  db_pool: Pool<Postgres>,
-                 gpt_parameters: GPTParameters,
+                 mut gpt_parameters: GPTParameters,
                  bot: Bot| async move {
                     if let Some(message) = msg.text() {
                         match message {
                             m if mention_parameters.chat_gpt_regex.is_match(m) => {
-                                chat_gpt_handler::handle_chat_gpt_question(bot, msg, gpt_parameters)
-                                    .await
+                                chat_gpt_handler::handle_chat_gpt_question(
+                                    bot,
+                                    msg,
+                                    &mut gpt_parameters,
+                                )
+                                .await
                             }
                             m if mention_parameters.rust_regex.is_match(m) => {
                                 rust_mention_handler::handle_rust_matched_mention(
@@ -81,9 +85,22 @@ async fn run() {
                             m if mention_parameters.gayness_regex.is_match(m) => {
                                 gayness_handler::handle_gayness_mention(bot, msg).await
                             }
-                            _ => default_handler::handle_default(msg, gpt_parameters).await,
+                            _ => {
+                                if let Some(reply_msg) = &msg.reply_to_message() {
+                                    chat_gpt_handler::handle_reply(
+                                        &bot,
+                                        &msg,
+                                        reply_msg,
+                                        &mut gpt_parameters,
+                                    )
+                                    .await;
+                                } else {
+                                    default_handler::handle_default(msg, gpt_parameters).await
+                                }
+                            }
                         }
                     }
+
                     respond(())
                 },
             ),
