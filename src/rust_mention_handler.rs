@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use log::{error, info};
 use sqlx::PgPool;
 use teloxide::prelude::*;
@@ -25,8 +25,7 @@ pub async fn handle_rust_matched_mention(
     req_time_diff: Duration,
 ) {
     let message_date = message.date.timestamp();
-    let curr_native_date = NaiveDateTime::from_timestamp_opt(message_date, 0).unwrap();
-    let curr_date: DateTime<Utc> = Utc.from_utc_datetime(&curr_native_date);
+    let curr_date = DateTime::from_timestamp(message_date, 0).unwrap();
     info!(
         "rust mention invocation: chat_id: {}, time: {}",
         message.chat.id, curr_date

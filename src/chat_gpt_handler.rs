@@ -99,7 +99,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
         }
     };
 
-    let chat_response = chat_gpt_call(&mut gpt_parameters.chat_gpt_api_token, chat_id, context)
+    let chat_response = chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context)
         .await
         .unwrap_or_else(|err| {
             error!("Can't execute chat_gpt_call: {}", err);
