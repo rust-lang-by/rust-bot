@@ -2,6 +2,9 @@ use std::fmt::Debug;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
+use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
+use crate::{chat_repository, GPTParameters};
 use log::{error, info};
 use redis::aio::ConnectionManager;
 use redis::{FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
@@ -9,11 +12,8 @@ use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use teloxide::prelude::*;
+use teloxide::types::ReplyParameters;
 use teloxide::RequestError;
-
-use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
-use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
-use crate::{chat_repository, GPTParameters};
 
 const FEDOR_CHAT_GPT_SYSTEM_CONTEXT: &str = "Предоставь грубый ответ. \
  Обильно матерись. \
@@ -116,8 +116,8 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
 
     let bot_reply_msg_response = bot
         .send_message(chat_id, gpt_response_content)
-        .reply_to_message_id(msg.id)
-        .message_thread_id(msg.thread_id.unwrap_or(0))
+        .reply_parameters(ReplyParameters::new(msg.id))
+        .message_thread_id(msg.thread_id.expect("can't find thread_id"))
         .await;
 
     update_bot_context_and_identifiers(
@@ -142,7 +142,7 @@ async fn update_bot_context_and_identifiers(
     match bot_reply_msg_response {
         Err(err) => error!("Can't send reply: {:?}", err),
         Ok(bot_reply_msg) => {
-            let context_update = Vec::from([&user_message, gpt_response_message]);
+            let context_update = Vec::from([user_message, gpt_response_message]);
             chat_repository::push_context(
                 redis_connection_manager,
                 bot_context_key,
@@ -228,7 +228,7 @@ pub async fn handle_reply(
 
             let bot_reply_msg_response = bot
                 .send_message(chat_id, gpt_response_content)
-                .reply_to_message_id(msg.id)
+                .reply_parameters(ReplyParameters::new(msg.id))
                 .await;
 
             update_bot_context_and_identifiers(

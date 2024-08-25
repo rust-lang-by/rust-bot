@@ -1,16 +1,15 @@
 use chrono::{Duration, Utc};
 use log::{error, info};
 use teloxide::prelude::*;
-use teloxide::types::MessageKind::Common;
-use teloxide::types::{ChatPermissions, MessageCommon, User};
+use teloxide::types::{ChatPermissions, ReplyParameters, User};
 
 pub async fn handle_gayness_mention(bot: Bot, msg: Message) {
     let chat_id = msg.chat.id;
     info!("gayness mention invocation: chat_id: {}", chat_id);
-    if let Common(MessageCommon {
+    if let Message {
         from: Some(User { id: user_id, .. }),
         ..
-    }) = msg.kind
+    } = msg
     {
         let mute_duration: Duration = calculate_mute_duration(msg.text());
         bot.restrict_chat_member(chat_id, user_id, ChatPermissions::empty())
@@ -25,8 +24,8 @@ pub async fn handle_gayness_mention(bot: Bot, msg: Message) {
                 mute_duration.num_minutes()
             ),
         )
-        .reply_to_message_id(msg.id)
-        .message_thread_id(msg.thread_id.unwrap_or(0))
+        .reply_parameters(ReplyParameters::new(msg.id))
+        .message_thread_id(msg.thread_id.expect("can't extract thread_id from message"))
         .await
         .map_err(|err| error!("Can't send reply: {:?}", err))
         .ok();
