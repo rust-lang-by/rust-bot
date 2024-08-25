@@ -2,8 +2,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use log::{error, info};
 use sqlx::PgPool;
 use teloxide::prelude::*;
-use teloxide::types::MessageKind::Common;
-use teloxide::types::{InputFile, MessageCommon, MessageId, User};
+use teloxide::types::{InputFile, MessageId, ReplyParameters, ThreadId, User};
 
 use crate::mention_repository;
 
@@ -31,7 +30,7 @@ pub async fn handle_rust_matched_mention(
         message.chat.id, curr_date
     );
 
-    if let Common(MessageCommon {
+    if let Message {
         from:
             Some(User {
                 id: user_id,
@@ -39,7 +38,7 @@ pub async fn handle_rust_matched_mention(
                 ..
             }),
         ..
-    }) = message.kind
+    } = message
     {
         // pool the latest mention time from db
         let chat_id = message.chat.id;
@@ -53,7 +52,11 @@ pub async fn handle_rust_matched_mention(
 
             let time_diff = curr_date.signed_duration_since(last_update_time);
             if time_diff > req_time_diff && chat_id.0 != RUST_CHAT {
-                let message_ids = (message.id, chat_id, message.thread_id.unwrap_or(0));
+                let message_ids = (
+                    message.id,
+                    chat_id,
+                    message.thread_id.expect("can't extract thread_id"),
+                );
                 send_rust_mention_response(bot, message_ids, time_diff, &username).await;
             }
 
@@ -61,7 +64,9 @@ pub async fn handle_rust_matched_mention(
                 &db_pool,
                 user_id.0 as i64,
                 &username,
-                message.thread_id.map_or_else(|| chat_id.0, |id| id as i64),
+                message
+                    .thread_id
+                    .map_or_else(|| chat_id.0, |id| id.0 .0 as i64),
             )
             .await
             .map_err(|err| error!("Can't insert mention: {:?}", err))
@@ -72,7 +77,7 @@ pub async fn handle_rust_matched_mention(
 
 async fn send_rust_mention_response(
     bot: Bot,
-    message_ids: (MessageId, ChatId, i32),
+    message_ids: (MessageId, ChatId, ThreadId),
     time_diff: Duration,
     username: &str,
 ) {
@@ -88,7 +93,7 @@ async fn send_rust_mention_response(
         ),
     )
     .message_thread_id(message_ids.2)
-    .reply_to_message_id(message_ids.0)
+    .reply_parameters(ReplyParameters::new(message_ids.0))
     .await
     .map_err(|err| error!("Can't send reply: {:?}", err))
     .ok();

@@ -1,19 +1,18 @@
 use log::{error, info};
-use teloxide::types::MessageKind::Common;
-use teloxide::types::{Message, MessageCommon, User};
+use teloxide::types::{Message, User};
 
 use crate::{chat_repository, GPTParameters};
 
 pub async fn handle_default(msg: Message, mut gpt_parameters: GPTParameters) {
     let chat_id = msg.chat.id;
     info!("default mention handler: chat_id: {}", chat_id);
-    if let Common(MessageCommon {
+    if let Message {
         from: Some(User { username: name, .. }),
         ..
-    }) = &msg.kind
+    } = &msg
     {
         let usr_msg = format!(
-            "{:?} сказал: {:?};",
+            "{:?} mentioned: {:?};",
             name.clone().unwrap_or_default(),
             &msg.text().unwrap_or_default()
         );
