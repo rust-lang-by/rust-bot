@@ -17,18 +17,27 @@ pub async fn handle_gayness_mention(bot: Bot, msg: Message) {
             .await
             .map_err(|err| error!("Can't apply restriction: {:?}", err))
             .ok();
-        bot.send_message(
-            chat_id,
-            format!(
-                "Think about your low 🏳️‍🌈 in {:?} minutes mute 😒",
-                mute_duration.num_minutes()
-            ),
-        )
-        .reply_parameters(ReplyParameters::new(msg.id))
-        .message_thread_id(msg.thread_id.expect("can't extract thread_id from message"))
-        .await
-        .map_err(|err| error!("Can't send reply: {:?}", err))
-        .ok();
+        let reply_msg = bot
+            .send_message(
+                chat_id,
+                format!(
+                    "Think about your low 🏳️‍🌈 in {:?} minutes mute 😒",
+                    mute_duration.num_minutes()
+                ),
+            )
+            .reply_parameters(ReplyParameters::new(msg.id));
+        if let Some(thread_id) = msg.thread_id {
+            reply_msg
+                .message_thread_id(thread_id)
+                .await
+                .map_err(|err| error!("Can't send reply: {:?}", err))
+                .ok();
+        } else {
+            reply_msg
+                .await
+                .map_err(|err| error!("Can't send reply: {:?}", err))
+                .ok();
+        }
     }
 }
 

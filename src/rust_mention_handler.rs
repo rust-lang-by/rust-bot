@@ -52,11 +52,7 @@ pub async fn handle_rust_matched_mention(
 
             let time_diff = curr_date.signed_duration_since(last_update_time);
             if time_diff > req_time_diff && chat_id.0 != RUST_CHAT {
-                let message_ids = (
-                    message.id,
-                    chat_id,
-                    message.thread_id.expect("can't extract thread_id"),
-                );
+                let message_ids = (message.id, chat_id, message.thread_id);
                 send_rust_mention_response(bot, message_ids, time_diff, &username).await;
             }
 
@@ -77,35 +73,51 @@ pub async fn handle_rust_matched_mention(
 
 async fn send_rust_mention_response(
     bot: Bot,
-    message_ids: (MessageId, ChatId, ThreadId),
+    message_ids: (MessageId, ChatId, Option<ThreadId>),
     time_diff: Duration,
     username: &str,
 ) {
-    bot.send_message(
-        message_ids.1,
-        format!(
-            "Hi, {}! You just wrote smth about Rust! \nBe careful, \
+    let reply_msg = bot
+        .send_message(
+            message_ids.1,
+            format!(
+                "Hi, {}! You just wrote smth about Rust! \nBe careful, \
                     {}d:{}h:{}m since last incident.",
-            username,
-            time_diff.num_days(),
-            time_diff.num_hours() % HOURS_PER_DAY,
-            time_diff.num_minutes() % MINUTES_PER_HOUR
-        ),
-    )
-    .message_thread_id(message_ids.2)
-    .reply_parameters(ReplyParameters::new(message_ids.0))
-    .await
-    .map_err(|err| error!("Can't send reply: {:?}", err))
-    .ok();
-
-    bot.send_sticker(
-        message_ids.1,
-        InputFile::file_id(fetch_sticker_id(time_diff)),
-    )
-    .message_thread_id(message_ids.2)
-    .await
-    .map_err(|err| error!("Can't send a sticker: {:?}", err))
-    .ok();
+                username,
+                time_diff.num_days(),
+                time_diff.num_hours() % HOURS_PER_DAY,
+                time_diff.num_minutes() % MINUTES_PER_HOUR
+            ),
+        )
+        .reply_parameters(ReplyParameters::new(message_ids.0));
+    if let Some(thread_id) = message_ids.2 {
+        // thread reply
+        reply_msg
+            .message_thread_id(thread_id)
+            .await
+            .map_err(|err| error!("Can't send reply: {:?}", err))
+            .ok();
+        bot.send_sticker(
+            message_ids.1,
+            InputFile::file_id(fetch_sticker_id(time_diff)),
+        )
+        .message_thread_id(thread_id)
+        .await
+        .map_err(|err| error!("Can't send a sticker: {:?}", err))
+        .ok();
+    } else {
+        reply_msg
+            .await
+            .map_err(|err| error!("Can't send reply: {:?}", err))
+            .ok();
+        bot.send_sticker(
+            message_ids.1,
+            InputFile::file_id(fetch_sticker_id(time_diff)),
+        )
+        .await
+        .map_err(|err| error!("Can't send a sticker: {:?}", err))
+        .ok();
+    }
 }
 
 pub fn fetch_sticker_id(time_diff: Duration) -> &'static str {
