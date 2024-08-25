@@ -114,11 +114,16 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
     let gpt_response_message = &chat_response[0].message;
     let gpt_response_content = &gpt_response_message.content;
 
-    let bot_reply_msg_response = bot
-        .send_message(chat_id, gpt_response_content)
-        .reply_parameters(ReplyParameters::new(msg.id))
-        .message_thread_id(msg.thread_id.expect("can't find thread_id"))
-        .await;
+    let bot_reply_msg_response = if let Some(thread_id) = msg.thread_id {
+        bot.send_message(chat_id, gpt_response_content)
+            .reply_parameters(ReplyParameters::new(msg.id))
+            .message_thread_id(thread_id)
+            .await
+    } else {
+        bot.send_message(chat_id, gpt_response_content)
+            .reply_parameters(ReplyParameters::new(msg.id))
+            .await
+    };
 
     update_bot_context_and_identifiers(
         &mut gpt_parameters.redis_connection_manager,
