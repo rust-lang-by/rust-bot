@@ -1,4 +1,4 @@
-FROM rust:1.80.1 AS build-env
+FROM rust:1.81.0 AS build-env
 WORKDIR /app
 COPY . /app
 RUN cargo build --release
