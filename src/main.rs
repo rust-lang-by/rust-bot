@@ -10,7 +10,6 @@ use teloxide::prelude::*;
 mod bf_mention_handler;
 mod chat_gpt_handler;
 mod chat_repository;
-mod default_handler;
 mod gayness_handler;
 mod mention_repository;
 mod rust_mention_handler;
@@ -68,7 +67,7 @@ async fn run() {
                                     msg,
                                     &mut gpt_parameters,
                                 )
-                                .await
+                                    .await
                             }
                             m if mention_parameters.rust_regex.is_match(m) => {
                                 rust_mention_handler::handle_rust_matched_mention(
@@ -77,7 +76,7 @@ async fn run() {
                                     db_pool,
                                     mention_parameters.req_time_diff,
                                 )
-                                .await
+                                    .await
                             }
                             m if mention_parameters.blazing_fast_regex.is_match(m) => {
                                 bf_mention_handler::handle_bf_matched_mention(bot, msg).await
@@ -93,9 +92,7 @@ async fn run() {
                                         reply_msg,
                                         &mut gpt_parameters,
                                     )
-                                    .await;
-                                } else {
-                                    default_handler::handle_default(msg, gpt_parameters).await
+                                        .await;
                                 }
                             }
                         }
