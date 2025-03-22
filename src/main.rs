@@ -17,7 +17,7 @@ mod rust_mention_handler;
 const RUST_REGEX: &str = r"(?i)(rust|раст)(.\W|.$|\W|$)";
 const BLAZING_FAST_REGEX: &str = r"\w*[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
 const GAYNESS_REGEX: &str = r"(\D[0-4]|\D)\d%\Dg";
-const CHAT_GPT_REGEX: &str = r"(?i)(fedor|ф[её]дор|федя|felix|феликс|feris|ferris|ферис|феррис)";
+const CHAT_GPT_REGEX: &str = r"(?i)(fedor|ф[её]дор|федя|felix|феликс|feris|ferris|ферис|феррис|m[au]sk|маск|elon|элон)";
 const MIN_TIME_DIFF: i64 = 15;
 
 #[tokio::main]
