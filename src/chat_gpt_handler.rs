@@ -36,7 +36,7 @@ const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комью
 Твоя задача вызвать у собеседника интерес к языку Rust. \
 Ты любишь рассказывать забавные факты о языке Rust.";
 
-const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(100);
+const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
 static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
 const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш].о?\b.*\bпроисходит)";
