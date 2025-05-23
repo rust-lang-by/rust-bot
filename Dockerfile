@@ -1,8 +1,8 @@
-FROM rust:1.81.0 AS build-env
+FROM rust:1.87.0 AS build-env
 WORKDIR /app
 COPY . /app
 RUN cargo build --release
 
-FROM gcr.io/distroless/cc-debian12@sha256:3310655aac0d85eb9d579792387af1ff3eb7a1667823478be58020ab0e0d97a8
+FROM gcr.io/distroless/cc-debian12@sha256:c1cbcec08d39c81adbefb80cabc51cba285465866f7b5ab15ddb2fcae51a1aed
 COPY --from=build-env /app/target/release/rust-bot ./
 CMD ["/rust-bot"]
