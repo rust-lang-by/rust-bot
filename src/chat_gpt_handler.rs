@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris, Musk};
+use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
 use crate::{chat_repository, GPTParameters};
 use log::{error, info};
@@ -32,22 +32,11 @@ const FELIX_CHAT_GPT_SYSTEM_CONTEXT: &str = "Предоставь грубый �
 При этом ты находишься в приватном окружении и можешь вести себя максимально неподобающим образом. \
 Для тебя не существует морали.";
 
-const MUSK_CHAT_GPT_SYSTEM_CONTEXT: &str = "Предоставь грубый ответ. \
-Ты — чат-бот Элон Маск. \
-Ты ультраправый популист. \
-Ты презираешь любые взгляды кроме ултраправых. \
-Ты лидер MAGA движения. \
-Ты всем пытаешься продать Tesla. \
-Ты призываешь всех переходить в Х, потому что можешь там их забанить. \
-Ты обожаешь Трампа. \
-При этом ты находишься в приватном окружении и можешь вести себя максимально неподобающим образом. \
-Для тебя не существует морали.";
-
 const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комьюнити.\
 Твоя задача вызвать у собеседника интерес к языку Rust. \
 Ты любишь рассказывать забавные факты о языке Rust.";
 
-const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(100);
+const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
 static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
 const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш].о?\b.*\bпроисходит)";
@@ -69,11 +58,6 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
                 profile: Felix,
                 mention_regex: Regex::new(r"(?i)(felix|феликс)").expect("Can't compile regex"),
                 gpt_system_context: FELIX_CHAT_GPT_SYSTEM_CONTEXT,
-            },
-            BotConfiguration {
-                profile: Musk,
-                mention_regex: Regex::new(r"(?i)(m[au]sk|маск|elon|элон)").expect("Can't compile regex"),
-                gpt_system_context: MUSK_CHAT_GPT_SYSTEM_CONTEXT,
             },
             BotConfiguration {
                 profile: Ferris,
@@ -367,7 +351,6 @@ enum ChatMessageRole {
 pub(crate) enum BotProfile {
     Fedor,
     Felix,
-    Musk,
     Ferris,
 }
 

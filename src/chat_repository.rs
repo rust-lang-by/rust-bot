@@ -32,14 +32,6 @@ pub async fn push_context(
     redis_connection_manager.rpush(key, context).await
 }
 
-pub async fn push_msg(
-    redis_connection_manager: &mut ConnectionManager,
-    key: i64,
-    msg: String,
-) -> RedisResult<()> {
-    redis_connection_manager.rpush(key, msg).await
-}
-
 pub async fn push_bot_msg_identifier(
     redis_connection_manager: &mut ConnectionManager,
     chat_key: &String,
