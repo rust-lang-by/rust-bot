@@ -38,7 +38,7 @@ const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комью
 
 const ARTICLE_SUMMARY_SYSTEM_CONTEXT: &str = "Проанализируй статью и дай краткое содержание. Применяй юмор в анализе. Ответ должен быть структурированным, разбитым на пункты и содержать максимум 300 симвалов.";
 
-const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(100);
+const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
 static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
 const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш].о?\b.*\bпроисходит)";
@@ -419,7 +419,7 @@ async fn chat_gpt_call(
     let client = Client::builder().build()?;
     let chat_request = ChatRequest {
         messages,
-        model: "gpt-3.5-turbo-1106",
+        model: "gpt-4o",
         max_tokens: 1000,
     };
     let response = client
