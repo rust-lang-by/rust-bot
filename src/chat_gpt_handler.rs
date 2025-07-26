@@ -36,6 +36,8 @@ const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комью
 Твоя задача вызвать у собеседника интерес к языку Rust. \
 Ты любишь рассказывать забавные факты о языке Rust.";
 
+const ARTICLE_SUMMARY_SYSTEM_CONTEXT: &str = "Проанализируй статью и дай краткое содержание. Применяй юмор в анализе. Ответ должен быть структурированным, разбитым на пункты и содержать максимум 300 симвалов.";
+
 const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
 static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
@@ -378,6 +380,31 @@ struct ChatResponse {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct Choice {
     message: ChatMessage,
+}
+
+pub(crate) async fn get_gpt_summary(api_key: &String, chat_id: ChatId, messages: String) -> String {
+    let system_message = ChatMessage {
+        role: System,
+        content: ARTICLE_SUMMARY_SYSTEM_CONTEXT.to_string(),
+    };
+    let content_message = ChatMessage {
+        role: User,
+        content: messages,
+    };
+    let context = Vec::from([system_message, content_message]);
+    let chat_response = chat_gpt_call(api_key, chat_id, context)
+        .await
+        .unwrap_or_else(|err| {
+            error!("Can't execute chat_gpt_call: {}", err);
+            Vec::from([Choice {
+                message: ChatMessage {
+                    role: Assistant,
+                    content: "Братан, давай папазжей, занят сейчас.".to_string(),
+                },
+            }])
+        });
+
+    chat_response[0].message.content.clone()
 }
 
 async fn chat_gpt_call(

@@ -13,11 +13,13 @@ mod chat_repository;
 mod gayness_handler;
 mod mention_repository;
 mod rust_mention_handler;
+mod url_summary_handler;
 
 const RUST_REGEX: &str = r"(?i)(rust|раст)(.\W|.$|\W|$)";
 const BLAZING_FAST_REGEX: &str = r"\w*[BbБб][LlЛл]\w*\W[FfФф][AaАа]\w*\b";
 const GAYNESS_REGEX: &str = r"(\D[0-4]|\D)\d%\Dg";
 const CHAT_GPT_REGEX: &str = r"(?i)(fedor|ф[её]дор|федя|felix|феликс|feris|ferris|ферис|феррис)";
+const URL_REGEX: &str = r#"https?://[^\s<>"{}|\\^`\[\]]*"#;
 const MIN_TIME_DIFF: i64 = 15;
 
 #[tokio::main]
@@ -46,6 +48,7 @@ async fn run() {
         blazing_fast_regex: Regex::new(BLAZING_FAST_REGEX).expect("Can't compile regex"),
         gayness_regex: Regex::new(GAYNESS_REGEX).expect("Can't compile regex"),
         chat_gpt_regex: Regex::new(CHAT_GPT_REGEX).expect("Can't compile regex"),
+        url_regex: Regex::new(URL_REGEX).expect("Can't compile regex"),
         req_time_diff: Duration::minutes(MIN_TIME_DIFF),
     };
 
@@ -65,6 +68,15 @@ async fn run() {
                                 chat_gpt_handler::handle_chat_gpt_question(
                                     bot,
                                     msg,
+                                    &mut gpt_parameters,
+                                )
+                                .await
+                            }
+                            m if mention_parameters.url_regex.is_match(m) => {
+                                url_summary_handler::handle_url_summary(
+                                    bot,
+                                    msg,
+                                    mention_parameters.url_regex,
                                     &mut gpt_parameters,
                                 )
                                 .await
@@ -128,6 +140,7 @@ struct MentionParameters {
     blazing_fast_regex: Regex,
     gayness_regex: Regex,
     chat_gpt_regex: Regex,
+    url_regex: Regex,
     req_time_diff: Duration,
 }
 
