@@ -140,11 +140,18 @@ async fn run() {
 }
 
 fn message_has_url(regex: &Regex, message_text: &String, text: &MediaText) -> bool {
-    regex.is_match(message_text)
+    let has_url_match = regex.is_match(message_text)
         || text
             .entities
             .iter()
-            .any(|entity| matches!(entity.kind, TextLink { .. } | Url))
+            .any(|entity| matches!(entity.kind, TextLink { .. } | Url));
+
+    // Exclude Instagram and TikTok URLs
+    if has_url_match {
+        !message_text.contains("instagram.") && !message_text.contains("tiktok.")
+    } else {
+        false
+    }
 }
 
 async fn establish_connection() -> Pool<Postgres> {
@@ -172,8 +179,9 @@ pub struct GPTParameters {
 
 #[cfg(test)]
 mod tests {
-    use crate::{CHAT_GPT_REGEX, RUST_REGEX};
+    use crate::{message_has_url, CHAT_GPT_REGEX, RUST_REGEX, URL_REGEX};
     use regex::Regex;
+    use teloxide::types::MediaText;
 
     #[test]
     fn test_rust_gpt_regex() {
@@ -193,5 +201,53 @@ mod tests {
         assert!(chat_gpt_regex.is_match("Феликс"));
         assert!(chat_gpt_regex.is_match("[[[Ferris"));
         assert!(chat_gpt_regex.is_match("[ Фёдор ъ"));
+    }
+
+    #[test]
+    fn test_url_regex() {
+        let url_regex = Regex::new(URL_REGEX).expect("Can't compile regex");
+        assert!(url_regex.is_match("https://example.com"));
+        assert!(url_regex.is_match("http://test.org"));
+        assert!(!url_regex.is_match("not a url"));
+    }
+
+    #[test]
+    fn test_message_has_url() {
+        let url_regex = Regex::new(URL_REGEX).expect("Can't compile regex");
+        let message_text = "Check this out: https://example.com".to_string();
+        let media_text = MediaText {
+            text: message_text.clone(),
+            entities: vec![],
+            link_preview_options: None,
+        };
+
+        assert!(message_has_url(&url_regex, &message_text, &media_text));
+
+        let message_text_no_url = "Just a regular message".to_string();
+        assert!(!message_has_url(
+            &url_regex,
+            &message_text_no_url,
+            &media_text
+        ));
+    }
+
+    #[test]
+    fn test_message_has_url_exclude_instagram_tiktok() {
+        let url_regex = Regex::new(URL_REGEX).expect("Can't compile regex");
+        let message_text = "Check this out: https://instagram.com/example".to_string();
+        let media_text = MediaText {
+            text: message_text.clone(),
+            entities: vec![],
+            link_preview_options: None,
+        };
+
+        assert!(!message_has_url(&url_regex, &message_text, &media_text));
+
+        let message_text_tiktok = "Check this out: https://tiktok.com/example".to_string();
+        assert!(!message_has_url(
+            &url_regex,
+            &message_text_tiktok,
+            &media_text
+        ));
     }
 }
