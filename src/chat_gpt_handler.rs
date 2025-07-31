@@ -47,7 +47,7 @@ static CHAT_SUMMARY_REQUEST_REGEX: OnceLock<Regex> = OnceLock::new();
 pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &mut GPTParameters) {
     let chat_id = msg.chat.id;
     let message = msg.text().expect("can't parse incoming message");
-    info!("gpt invocation: chat_id: {}, message: {}", chat_id, message);
+    info!("gpt invocation: chat_id: {chat_id}, message: {message}");
     let bot_profiles = BOT_PROFILES.get_or_init(|| {
         vec![
             BotConfiguration {
@@ -104,7 +104,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
     let chat_response = chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context)
         .await
         .unwrap_or_else(|err| {
-            error!("Can't execute chat_gpt_call: {}", err);
+            error!("Can't execute chat_gpt_call: {err}");
             Vec::from([Choice {
                 message: ChatMessage {
                     role: Assistant,
@@ -147,7 +147,7 @@ async fn update_bot_context_and_identifiers(
     bot_reply_msg_response: Result<Message, RequestError>,
 ) {
     match bot_reply_msg_response {
-        Err(err) => error!("Can't send reply: {:?}", err),
+        Err(err) => error!("Can't send reply: {err:?}"),
         Ok(bot_reply_msg) => {
             let context_update = Vec::from([user_message, gpt_response_message]);
             chat_repository::push_context(
@@ -156,7 +156,7 @@ async fn update_bot_context_and_identifiers(
                 context_update,
             )
             .await
-            .map_err(|err| error!("Can't update context in Redis: {:?}", err))
+            .map_err(|err| error!("Can't update context in Redis: {err:?}"))
             .ok();
             let chat_key = &format!("chat:{:#?}", bot_reply_msg.chat.id.0);
             chat_repository::push_bot_msg_identifier(
@@ -166,7 +166,7 @@ async fn update_bot_context_and_identifiers(
                 bot_profile,
             )
             .await
-            .map_err(|err| error!("Can't update context in Redis: {:?}", err))
+            .map_err(|err| error!("Can't update context in Redis: {err:?}"))
             .ok();
         }
     }
@@ -182,7 +182,7 @@ pub async fn handle_reply(
     let message = msg.text().expect("can't parse incoming message");
     let chat_id = msg.chat.id;
     let chat_key = &format!("chat:{:#?}", chat_id.0);
-    info!("chat_key: {:?}", chat_key);
+    info!("chat_key: {chat_key:?}");
     let reply_msg_id = reply_msg.id.0;
     if let Ok(reply_msg_bot_profile) = chat_repository::get_bot_msg_profile(
         &mut gpt_parameters.redis_connection_manager,
@@ -192,12 +192,11 @@ pub async fn handle_reply(
     .await
     {
         info!(
-            "handle msg of bot msg reply_msg_id:'{:#?}' under bot profile:'{:#?}'",
-            reply_msg_id, reply_msg_bot_profile
+            "handle msg of bot msg reply_msg_id:'{reply_msg_id:#?}' under bot profile:'{reply_msg_bot_profile:#?}'"
         );
         info!(
-            "truing to reply chat_id:{:#?}, msg_id: {:?}, thread_id: {:#?}",
-            chat_id, msg.id, msg.thread_id
+            "truing to reply chat_id:{chat_id:#?}, msg_id: {:?}, thread_id: {:#?}",
+            msg.id, msg.thread_id
         );
         if let Some(bot_profiles) = BOT_PROFILES.get() {
             let bot_configuration = bot_profiles
