@@ -1,11 +1,14 @@
-use std::env;
-
 use chrono::Duration;
 use log::info;
 use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{PgPool, Pool, Postgres};
+use std::env;
 use teloxide::prelude::*;
+use teloxide::types::MediaKind::Text;
+use teloxide::types::MessageEntityKind::{TextLink, Url};
+use teloxide::types::MessageKind::Common;
+use teloxide::types::{MediaText, MessageCommon};
 
 mod bf_mention_handler;
 mod chat_gpt_handler;
@@ -62,9 +65,13 @@ async fn run() {
                  db_pool: Pool<Postgres>,
                  mut gpt_parameters: GPTParameters,
                  bot: Bot| async move {
-                    if let Some(message) = msg.text() {
-                        match message {
-                            m if mention_parameters.chat_gpt_regex.is_match(m) => {
+                    if let Common(MessageCommon {
+                        media_kind: Text(media_text),
+                        ..
+                    }) = &msg.kind
+                    {
+                        match &media_text.text {
+                            text if mention_parameters.chat_gpt_regex.is_match(text) => {
                                 chat_gpt_handler::handle_chat_gpt_question(
                                     bot,
                                     msg,
@@ -72,7 +79,12 @@ async fn run() {
                                 )
                                 .await
                             }
-                            m if mention_parameters.url_regex.is_match(m) => {
+                            text if message_has_url(
+                                &mention_parameters.url_regex,
+                                text,
+                                media_text,
+                            ) =>
+                            {
                                 url_summary_handler::handle_url_summary(
                                     bot,
                                     msg,
@@ -81,7 +93,7 @@ async fn run() {
                                 )
                                 .await
                             }
-                            m if mention_parameters.rust_regex.is_match(m) => {
+                            text if mention_parameters.rust_regex.is_match(text) => {
                                 rust_mention_handler::handle_rust_matched_mention(
                                     bot,
                                     msg,
@@ -90,10 +102,10 @@ async fn run() {
                                 )
                                 .await
                             }
-                            m if mention_parameters.blazing_fast_regex.is_match(m) => {
+                            text if mention_parameters.blazing_fast_regex.is_match(text) => {
                                 bf_mention_handler::handle_bf_matched_mention(bot, msg).await
                             }
-                            m if mention_parameters.gayness_regex.is_match(m) => {
+                            text if mention_parameters.gayness_regex.is_match(text) => {
                                 gayness_handler::handle_gayness_mention(bot, msg).await
                             }
                             _ => {
@@ -125,6 +137,14 @@ async fn run() {
         .build()
         .dispatch()
         .await;
+}
+
+fn message_has_url(regex: &Regex, message_text: &String, text: &MediaText) -> bool {
+    regex.is_match(message_text)
+        || text
+            .entities
+            .iter()
+            .any(|entity| matches!(entity.kind, TextLink { .. } | Url))
 }
 
 async fn establish_connection() -> Pool<Postgres> {
