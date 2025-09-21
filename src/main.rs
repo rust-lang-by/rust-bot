@@ -14,6 +14,7 @@ mod bf_mention_handler;
 mod chat_gpt_handler;
 mod chat_repository;
 mod gayness_handler;
+mod gpt_service;
 mod mention_repository;
 mod rust_mention_handler;
 mod url_summary_handler;
@@ -139,7 +140,7 @@ async fn run() {
         .await;
 }
 
-fn message_has_url(regex: &Regex, message_text: &String, text: &MediaText) -> bool {
+fn message_has_url(regex: &Regex, message_text: &str, text: &MediaText) -> bool {
     let has_url_match = regex.is_match(message_text)
         || text
             .entities

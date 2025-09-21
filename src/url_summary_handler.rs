@@ -1,4 +1,6 @@
-use crate::{chat_gpt_handler, GPTParameters};
+use crate::gpt_service::ChatMessage;
+use crate::gpt_service::ChatMessageRole::{System, User};
+use crate::{gpt_service, GPTParameters};
 use log::{error, info};
 use regex::Regex;
 use reqwest::Client;
@@ -10,6 +12,8 @@ use teloxide::types::MessageKind::Common;
 use teloxide::types::{MediaText, MessageCommon, ReplyParameters};
 
 const ARTICLE_EXTRACTION_TIMEOUT: Duration = Duration::from_secs(30);
+const ARTICLE_SUMMARY_SYSTEM_CONTEXT: &str = "Проанализируй статью и дай краткое содержание. Применяй юмор в анализе. Ответ должен быть структурированным, разбитым на пункты и содержать максимум 300 симвалов.";
+
 pub async fn handle_url_summary(
     bot: Bot,
     msg: Message,
@@ -28,7 +32,7 @@ pub async fn handle_url_summary(
             chat_id, msg_text
         );
         let url = url_regex
-            .find(&msg_text)
+            .find(msg_text)
             .map(|m| m.as_str().to_string())
             .or(find_link(&media_text));
         let Some(url) = url else {
@@ -42,12 +46,8 @@ pub async fn handle_url_summary(
         if clean_content.len() < 1000 {
             return;
         }
-        let summary = chat_gpt_handler::get_gpt_summary(
-            &gpt_parameters.chat_gpt_api_token,
-            chat_id,
-            clean_content,
-        )
-        .await;
+        let summary =
+            get_gpt_summary(&gpt_parameters.chat_gpt_api_token, chat_id, clean_content).await;
 
         let reply_msg = bot
             .send_message(chat_id, format!("TLDR:\n{}", summary))
@@ -72,14 +72,13 @@ fn find_link(media_text: &MediaText) -> Option<String> {
         .entities
         .iter()
         .map(|el| {
-            return if let TextLink { url: x } = &el.kind {
+            if let TextLink { url: x } = &el.kind {
                 Some(x.to_string())
             } else {
                 None
-            };
+            }
         })
-        .find(|el| el.is_some())
-        .map(|el| el.unwrap())
+        .find_map(|el| el)
 }
 
 async fn get_content_call(url: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -93,4 +92,20 @@ async fn get_content_call(url: &str) -> Result<String, Box<dyn std::error::Error
         .text()
         .await?;
     Ok(response)
+}
+
+pub async fn get_gpt_summary(api_key: &String, chat_id: ChatId, message: String) -> String {
+    let system_message = ChatMessage {
+        role: System,
+        content: ARTICLE_SUMMARY_SYSTEM_CONTEXT.to_string(),
+    };
+    let content_message = ChatMessage {
+        role: User,
+        content: message,
+    };
+
+    let context = Vec::from([system_message, content_message]);
+    gpt_service::chat_gpt_call(api_key, chat_id, context)
+        .await
+        .content
 }
