@@ -1,7 +1,8 @@
-use crate::chat_gpt_handler::{BotProfile, ChatMessage};
+use crate::chat_gpt_handler::BotProfile;
+use crate::gpt_service::ChatMessage;
 use log::info;
 use redis::aio::ConnectionManager;
-use redis::{AsyncCommands, RedisResult};
+use redis::{AsyncCommands, FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
 use tokio::io;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
@@ -14,6 +15,38 @@ pub async fn get_bot_context(
 ) -> RedisResult<Vec<ChatMessage>> {
     info!("fetching  chat bot context for context_key: {}", key);
     timeout_cmd(connection_manager.lrange(key, 0, 11)).await
+}
+
+impl ToRedisArgs for ChatMessage {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + RedisWrite,
+    {
+        out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
+    }
+}
+
+impl FromRedisValue for ChatMessage {
+    fn from_redis_value(v: &Value) -> RedisResult<Self> {
+        let str_value: String = FromRedisValue::from_redis_value(v)?;
+        Ok(serde_json::from_str(&str_value).expect("Can't deserialize Context as string"))
+    }
+}
+
+impl ToRedisArgs for BotProfile {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + RedisWrite,
+    {
+        out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
+    }
+}
+
+impl FromRedisValue for BotProfile {
+    fn from_redis_value(v: &Value) -> RedisResult<Self> {
+        let str_value: String = FromRedisValue::from_redis_value(v)?;
+        Ok(serde_json::from_str(&str_value).expect("Can't deserialize Context as string"))
+    }
 }
 
 pub async fn get_chat_history(

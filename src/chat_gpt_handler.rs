@@ -1,15 +1,13 @@
 use std::fmt::Debug;
 use std::sync::OnceLock;
-use std::time::Duration;
 
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
-use crate::chat_gpt_handler::ChatMessageRole::{Assistant, System, User};
-use crate::{chat_repository, GPTParameters};
+use crate::chat_gpt_handler::ChatMessageRole::{System, User};
+use crate::gpt_service::{ChatMessage, ChatMessageRole};
+use crate::{chat_repository, gpt_service, GPTParameters};
 use log::{error, info};
 use redis::aio::ConnectionManager;
-use redis::{FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
 use regex::Regex;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use teloxide::prelude::*;
 use teloxide::types::ReplyParameters;
@@ -36,10 +34,6 @@ const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комью
 Твоя задача вызвать у собеседника интерес к языку Rust. \
 Ты любишь рассказывать забавные факты о языке Rust.";
 
-const ARTICLE_SUMMARY_SYSTEM_CONTEXT: &str = "Проанализируй статью и дай краткое содержание. Применяй юмор в анализе. Ответ должен быть структурированным, разбитым на пункты и содержать максимум 300 симвалов.";
-
-const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
-const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
 static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
 const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш].о?\b.*\bпроисходит)";
 static CHAT_SUMMARY_REQUEST_REGEX: OnceLock<Regex> = OnceLock::new();
@@ -101,28 +95,15 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
         }
     };
 
-    let chat_response = chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context)
-        .await
-        .unwrap_or_else(|err| {
-            error!("Can't execute chat_gpt_call: {err}");
-            Vec::from([Choice {
-                message: ChatMessage {
-                    role: Assistant,
-                    content: "Братан, давай папазжей, занят сейчас.".to_string(),
-                },
-            }])
-        });
-
-    let gpt_response_message = &chat_response[0].message;
-    let gpt_response_content = &gpt_response_message.content;
-
+    let gpt_response_message =
+        gpt_service::chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context).await;
     let bot_reply_msg_response = if let Some(thread_id) = msg.thread_id {
-        bot.send_message(chat_id, gpt_response_content)
+        bot.send_message(chat_id, &gpt_response_message.content)
             .reply_parameters(ReplyParameters::new(msg.id))
             .message_thread_id(thread_id)
             .await
     } else {
-        bot.send_message(chat_id, gpt_response_content)
+        bot.send_message(chat_id, &gpt_response_message.content)
             .reply_parameters(ReplyParameters::new(msg.id))
             .await
     };
@@ -132,7 +113,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
         bot_configuration.profile,
         bot_context_key,
         &user_message,
-        gpt_response_message,
+        &gpt_response_message,
         bot_reply_msg_response,
     )
     .await;
@@ -217,23 +198,11 @@ pub async fn handle_reply(
             )
             .await;
 
-            let chat_response = chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context)
-                .await
-                .unwrap_or_else(|err| {
-                    error!("Can't execute chat_gpt_call: {}", err);
-                    Vec::from([Choice {
-                        message: ChatMessage {
-                            role: Assistant,
-                            content: "Братан, давай папазжей, занят сейчас.".to_string(),
-                        },
-                    }])
-                });
-
-            let gpt_response_message = &chat_response[0].message;
-            let gpt_response_content = &gpt_response_message.content;
-
+            let gpt_response_message =
+                gpt_service::chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context)
+                    .await;
             let bot_reply_msg_response = bot
-                .send_message(chat_id, gpt_response_content)
+                .send_message(chat_id, &gpt_response_message.content)
                 .reply_parameters(ReplyParameters::new(msg.id))
                 .await;
 
@@ -242,7 +211,7 @@ pub async fn handle_reply(
                 bot_configuration.profile,
                 bot_context_key,
                 &user_message,
-                gpt_response_message,
+                &gpt_response_message,
                 bot_reply_msg_response,
             )
             .await;
@@ -311,128 +280,11 @@ impl BotConfiguration<'static> {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct ChatRequest<'a> {
-    messages: Vec<ChatMessage>,
-    model: &'a str,
-    max_tokens: i32,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct ChatMessage {
-    role: ChatMessageRole,
-    content: String,
-}
-
-impl ToRedisArgs for ChatMessage {
-    fn write_redis_args<W>(&self, out: &mut W)
-    where
-        W: ?Sized + RedisWrite,
-    {
-        out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
-    }
-}
-
-impl FromRedisValue for ChatMessage {
-    fn from_redis_value(v: &Value) -> RedisResult<Self> {
-        let str_value: String = FromRedisValue::from_redis_value(v)?;
-        Ok(serde_json::from_str(&str_value).expect("Can't deserialize Context as string"))
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, Copy, Clone)]
-#[serde(rename_all = "lowercase")]
-enum ChatMessageRole {
-    System,
-    User,
-    Assistant,
-}
-
 #[derive(Debug, Deserialize, Serialize, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum BotProfile {
     Fedor,
     Felix,
     Ferris,
-}
-
-impl ToRedisArgs for BotProfile {
-    fn write_redis_args<W>(&self, out: &mut W)
-    where
-        W: ?Sized + RedisWrite,
-    {
-        out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
-    }
-}
-
-impl FromRedisValue for BotProfile {
-    fn from_redis_value(v: &Value) -> RedisResult<Self> {
-        let str_value: String = FromRedisValue::from_redis_value(v)?;
-        Ok(serde_json::from_str(&str_value).expect("Can't deserialize Context as string"))
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct ChatResponse {
-    choices: Vec<Choice>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-struct Choice {
-    message: ChatMessage,
-}
-
-pub(crate) async fn get_gpt_summary(api_key: &String, chat_id: ChatId, messages: String) -> String {
-    let system_message = ChatMessage {
-        role: System,
-        content: ARTICLE_SUMMARY_SYSTEM_CONTEXT.to_string(),
-    };
-    let content_message = ChatMessage {
-        role: User,
-        content: messages,
-    };
-    let context = Vec::from([system_message, content_message]);
-    let chat_response = chat_gpt_call(api_key, chat_id, context)
-        .await
-        .unwrap_or_else(|err| {
-            error!("Can't execute chat_gpt_call: {}", err);
-            Vec::from([Choice {
-                message: ChatMessage {
-                    role: Assistant,
-                    content: "Братан, давай папазжей, занят сейчас.".to_string(),
-                },
-            }])
-        });
-
-    chat_response[0].message.content.clone()
-}
-
-async fn chat_gpt_call(
-    api_key: &String,
-    chat_id: ChatId,
-    messages: Vec<ChatMessage>,
-) -> Result<Vec<Choice>, Box<dyn std::error::Error>> {
-    info!(
-        "gpt call invocation from chat_id: {} with context: {:#?}",
-        chat_id, messages
-    );
-    let client = Client::builder().build()?;
-    let chat_request = ChatRequest {
-        messages,
-        model: "gpt-4o",
-        max_tokens: 1000,
-    };
-    let response = client
-        .post(OPEN_AI_COMPLETION_URL)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&chat_request)
-        .timeout(GPT_REQUEST_TIMEOUT)
-        .send()
-        .await?
-        .json::<ChatResponse>()
-        .await?;
-    info!("gpt call invocation for chat_id {} completed", chat_id);
-    Ok(response.choices)
 }
 
 #[cfg(test)]
