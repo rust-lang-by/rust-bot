@@ -66,7 +66,7 @@ async fn gpt_call(
     let client = Client::builder().build()?;
     let chat_request = ChatRequest {
         messages,
-        model: "gpt-4o",
+        model: "gpt-5-mini",
         max_tokens: 1000,
     };
     let response = client
