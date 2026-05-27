@@ -189,12 +189,18 @@ pub fn text_message_update(text: &str, chat_id: i64, user_id: i64, message_id: i
 /// Build deps, dispatch a single update through the real handler tree, and
 /// fail fast if anything stalls.
 pub async fn dispatch_one(bot: Bot, pool: PgPool, gpt_parameters: GptParameters, update: Update) {
+    use std::ops::ControlFlow;
+
     let handler = build_handler();
     let mention_parameters = MentionParameters::default();
     let deps = dptree::deps![update, bot, mention_parameters, pool, gpt_parameters];
-    let _ = tokio::time::timeout(Duration::from_secs(15), handler.dispatch(deps))
+    let outcome = tokio::time::timeout(Duration::from_secs(15), handler.dispatch(deps))
         .await
         .expect("dispatcher did not complete within 15s");
+    assert!(
+        matches!(outcome, ControlFlow::Break(Ok(()))),
+        "dispatcher did not route to a handler (outcome did not match Break(Ok(())))"
+    );
 }
 
 fn default_message_response() -> Value {
