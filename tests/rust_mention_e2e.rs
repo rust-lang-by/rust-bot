@@ -34,7 +34,7 @@ async fn rust_mention_triggers_reply_and_inserts_mention() {
 
     let send_message_bodies: Vec<String> = requests
         .iter()
-        .filter(|r| r.url.path().ends_with("/sendMessage"))
+        .filter(|r| r.url.path().ends_with("/SendMessage"))
         .map(|r| String::from_utf8_lossy(&r.body).to_string())
         .collect();
 
@@ -53,7 +53,7 @@ async fn rust_mention_triggers_reply_and_inserts_mention() {
 
     let send_sticker_count = requests
         .iter()
-        .filter(|r| r.url.path().ends_with("/sendSticker"))
+        .filter(|r| r.url.path().ends_with("/SendSticker"))
         .count();
     assert_eq!(send_sticker_count, 1, "expected 1 sendSticker call");
 

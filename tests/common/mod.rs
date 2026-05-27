@@ -106,19 +106,19 @@ pub async fn spawn_telegram() -> (MockServer, Bot) {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path(format!("/bot{TEST_BOT_TOKEN}/sendMessage")))
+        .and(path(format!("/bot{TEST_BOT_TOKEN}/SendMessage")))
         .respond_with(ResponseTemplate::new(200).set_body_json(default_message_response()))
         .mount(&server)
         .await;
 
     Mock::given(method("POST"))
-        .and(path(format!("/bot{TEST_BOT_TOKEN}/sendSticker")))
+        .and(path(format!("/bot{TEST_BOT_TOKEN}/SendSticker")))
         .respond_with(ResponseTemplate::new(200).set_body_json(default_message_response()))
         .mount(&server)
         .await;
 
     Mock::given(method("POST"))
-        .and(path(format!("/bot{TEST_BOT_TOKEN}/restrictChatMember")))
+        .and(path(format!("/bot{TEST_BOT_TOKEN}/RestrictChatMember")))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true, "result": true})))
         .mount(&server)
         .await;
@@ -163,6 +163,11 @@ pub fn gpt_parameters(redis: ConnectionManager, openai_base_url: String) -> GptP
 
 pub fn text_message_update(text: &str, chat_id: i64, user_id: i64, message_id: i32) -> Update {
     let now = chrono::Utc::now().timestamp();
+    // teloxide-core 0.10's UpdateKind::Deserialize first tries `next_key::<&str>`
+    // and falls back to `next_key::<String>` only if the &str attempt failed —
+    // but `serde_json::from_value` produces owned String keys that don't satisfy
+    // &str, and the cursor advances anyway. Round-trip through a JSON string so
+    // the borrowed-str path succeeds and Update::kind becomes Message(...).
     let value: Value = json!({
         "update_id": message_id,
         "message": {
@@ -183,7 +188,8 @@ pub fn text_message_update(text: &str, chat_id: i64, user_id: i64, message_id: i
             "entities": []
         }
     });
-    serde_json::from_value(value).expect("build Update")
+    let serialized = serde_json::to_string(&value).expect("serialize update json");
+    serde_json::from_str(&serialized).expect("build Update")
 }
 
 /// Build deps, dispatch a single update through the real handler tree, and
@@ -199,7 +205,7 @@ pub async fn dispatch_one(bot: Bot, pool: PgPool, gpt_parameters: GptParameters,
         .expect("dispatcher did not complete within 15s");
     assert!(
         matches!(outcome, ControlFlow::Break(Ok(()))),
-        "dispatcher did not route to a handler (outcome did not match Break(Ok(())))"
+        "dispatcher did not route to a handler: outcome={outcome:?}"
     );
 }
 

@@ -48,7 +48,7 @@ async fn url_summary_fetches_article_summarizes_and_replies() {
         .expect("collect telegram requests");
     let send_message_bodies: Vec<String> = telegram_requests
         .iter()
-        .filter(|r| r.url.path().ends_with("/sendMessage"))
+        .filter(|r| r.url.path().ends_with("/SendMessage"))
         .map(|r| String::from_utf8_lossy(&r.body).to_string())
         .collect();
     assert_eq!(
