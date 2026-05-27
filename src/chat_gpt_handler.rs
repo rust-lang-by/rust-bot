@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{System, User};
 use crate::gpt_service::{ChatMessage, ChatMessageRole};
-use crate::{chat_repository, gpt_service, GPTParameters};
+use crate::{chat_repository, gpt_service, GptParameters};
 use log::{error, info};
 use redis::aio::ConnectionManager;
 use regex::Regex;
@@ -38,7 +38,7 @@ static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
 const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш].о?\b.*\bпроисходит)";
 static CHAT_SUMMARY_REQUEST_REGEX: OnceLock<Regex> = OnceLock::new();
 
-pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &mut GPTParameters) {
+pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &GptParameters) {
     let chat_id = msg.chat.id;
     let message = msg.text().expect("can't parse incoming message");
     info!("gpt invocation: chat_id: {chat_id}, message: {message}");
@@ -74,10 +74,11 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
     };
     let summary_request_regex = CHAT_SUMMARY_REQUEST_REGEX
         .get_or_init(|| Regex::new(SUMMARY_REQUEST_REGEX).expect("Can't compile regex"));
+    let mut redis_cm = gpt_parameters.redis_connection_manager.clone();
     let context = match summary_request_regex.is_match(message) {
         true => {
             fetch_chat_summary_context(
-                &mut gpt_parameters.redis_connection_manager,
+                &mut redis_cm,
                 chat_id.0,
                 &user_message,
                 bot_configuration.gpt_system_context,
@@ -86,7 +87,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
         }
         false => {
             fetch_bot_context(
-                &mut gpt_parameters.redis_connection_manager,
+                &mut redis_cm,
                 bot_context_key,
                 &user_message,
                 bot_configuration.gpt_system_context,
@@ -95,8 +96,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
         }
     };
 
-    let gpt_response_message =
-        gpt_service::chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context).await;
+    let gpt_response_message = gpt_service::chat_gpt_call(gpt_parameters, chat_id, context).await;
     let bot_reply_msg_response = if let Some(thread_id) = msg.thread_id {
         bot.send_message(chat_id, &gpt_response_message.content)
             .reply_parameters(ReplyParameters::new(msg.id))
@@ -109,7 +109,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &m
     };
 
     update_bot_context_and_identifiers(
-        &mut gpt_parameters.redis_connection_manager,
+        &mut redis_cm,
         bot_configuration.profile,
         bot_context_key,
         &user_message,
@@ -157,7 +157,7 @@ pub async fn handle_reply(
     bot: &Bot,
     msg: &Message,
     reply_msg: &Message,
-    gpt_parameters: &mut GPTParameters,
+    gpt_parameters: &GptParameters,
 ) {
     info!("handle reply gpt question");
     let message = msg.text().expect("can't parse incoming message");
@@ -165,12 +165,9 @@ pub async fn handle_reply(
     let chat_key = &format!("chat:{:#?}", chat_id.0);
     info!("chat_key: {chat_key:?}");
     let reply_msg_id = reply_msg.id.0;
-    if let Ok(reply_msg_bot_profile) = chat_repository::get_bot_msg_profile(
-        &mut gpt_parameters.redis_connection_manager,
-        chat_key,
-        reply_msg_id,
-    )
-    .await
+    let mut redis_cm = gpt_parameters.redis_connection_manager.clone();
+    if let Ok(reply_msg_bot_profile) =
+        chat_repository::get_bot_msg_profile(&mut redis_cm, chat_key, reply_msg_id).await
     {
         info!(
             "handle msg of bot msg reply_msg_id:'{reply_msg_id:#?}' under bot profile:'{reply_msg_bot_profile:#?}'"
@@ -191,7 +188,7 @@ pub async fn handle_reply(
                 content: message.to_string(),
             };
             let context = fetch_bot_context(
-                &mut gpt_parameters.redis_connection_manager,
+                &mut redis_cm,
                 bot_context_key,
                 &user_message,
                 bot_configuration.gpt_system_context,
@@ -199,15 +196,14 @@ pub async fn handle_reply(
             .await;
 
             let gpt_response_message =
-                gpt_service::chat_gpt_call(&gpt_parameters.chat_gpt_api_token, chat_id, context)
-                    .await;
+                gpt_service::chat_gpt_call(gpt_parameters, chat_id, context).await;
             let bot_reply_msg_response = bot
                 .send_message(chat_id, &gpt_response_message.content)
                 .reply_parameters(ReplyParameters::new(msg.id))
                 .await;
 
             update_bot_context_and_identifiers(
-                &mut gpt_parameters.redis_connection_manager,
+                &mut redis_cm,
                 bot_configuration.profile,
                 bot_context_key,
                 &user_message,
@@ -281,7 +277,7 @@ impl BotConfiguration<'static> {
 }
 
 #[derive(Debug, Deserialize, Serialize, Copy, Clone, Eq, PartialEq)]
-pub(crate) enum BotProfile {
+pub enum BotProfile {
     Fedor,
     Felix,
     Ferris,
