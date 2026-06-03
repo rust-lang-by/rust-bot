@@ -1,6 +1,6 @@
 use crate::gpt_service::ChatMessage;
 use crate::gpt_service::ChatMessageRole::{System, User};
-use crate::{gpt_service, GPTParameters};
+use crate::{gpt_service, GptParameters};
 use log::{error, info};
 use regex::Regex;
 use reqwest::Client;
@@ -18,7 +18,7 @@ pub async fn handle_url_summary(
     bot: Bot,
     msg: Message,
     url_regex: Regex,
-    gpt_parameters: &mut GPTParameters,
+    gpt_parameters: &GptParameters,
 ) {
     if let Common(MessageCommon {
         media_kind: Text(media_text),
@@ -40,14 +40,15 @@ pub async fn handle_url_summary(
             return;
         };
 
-        let content = get_content_call(&url).await.unwrap();
+        let content = get_content_call(&gpt_parameters.http_client, &url)
+            .await
+            .unwrap();
         let clean_content = html2text::from_read(content.as_bytes(), 120).unwrap();
         // Check if the content is long enough to summarize
         if clean_content.len() < 1000 {
             return;
         }
-        let summary =
-            get_gpt_summary(&gpt_parameters.chat_gpt_api_token, chat_id, clean_content).await;
+        let summary = get_gpt_summary(gpt_parameters, chat_id, clean_content).await;
 
         let reply_msg = bot
             .send_message(chat_id, format!("TLDR:\n{}", summary))
@@ -81,9 +82,10 @@ fn find_link(media_text: &MediaText) -> Option<String> {
         .find_map(|el| el)
 }
 
-async fn get_content_call(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let client = Client::builder().build()?;
-
+async fn get_content_call(
+    client: &Client,
+    url: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let response = client
         .get(url)
         .timeout(ARTICLE_EXTRACTION_TIMEOUT)
@@ -94,7 +96,7 @@ async fn get_content_call(url: &str) -> Result<String, Box<dyn std::error::Error
     Ok(response)
 }
 
-pub async fn get_gpt_summary(api_key: &String, chat_id: ChatId, message: String) -> String {
+pub async fn get_gpt_summary(params: &GptParameters, chat_id: ChatId, message: String) -> String {
     let system_message = ChatMessage {
         role: System,
         content: ARTICLE_SUMMARY_SYSTEM_CONTEXT.to_string(),
@@ -105,7 +107,7 @@ pub async fn get_gpt_summary(api_key: &String, chat_id: ChatId, message: String)
     };
 
     let context = Vec::from([system_message, content_message]);
-    gpt_service::chat_gpt_call(api_key, chat_id, context)
+    gpt_service::chat_gpt_call(params, chat_id, context)
         .await
         .content
 }
