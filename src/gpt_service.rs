@@ -1,11 +1,11 @@
 use log::{error, info};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use teloxide::types::ChatId;
 
+use crate::GptParameters;
+
 const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
-const OPEN_AI_COMPLETION_URL: &str = "https://api.openai.com/v1/chat/completions";
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ChatRequest<'a> {
@@ -37,12 +37,13 @@ pub struct ChatMessage {
     pub role: ChatMessageRole,
     pub content: String,
 }
+
 pub async fn chat_gpt_call(
-    api_key: &String,
+    params: &GptParameters,
     chat_id: ChatId,
     messages: Vec<ChatMessage>,
 ) -> ChatMessage {
-    match gpt_call(api_key, chat_id, messages).await {
+    match gpt_call(params, chat_id, messages).await {
         Ok(choices) => choices[0].message.to_owned(),
         Err(err) => {
             error!("Can't execute chat_gpt_call: {}", err);
@@ -55,7 +56,7 @@ pub async fn chat_gpt_call(
 }
 
 async fn gpt_call(
-    api_key: &String,
+    params: &GptParameters,
     chat_id: ChatId,
     messages: Vec<ChatMessage>,
 ) -> Result<Vec<Choice>, Box<dyn std::error::Error>> {
@@ -63,16 +64,19 @@ async fn gpt_call(
         "gpt call invocation from chat_id: {} with context: {:#?}",
         chat_id, messages
     );
-    let client = Client::builder().build()?;
     let chat_request = ChatRequest {
         messages,
         model: "gpt-4o",
         max_tokens: 1000,
     };
-    let response = client
-        .post(OPEN_AI_COMPLETION_URL)
+    let response = params
+        .http_client
+        .post(params.openai_base_url.as_ref())
         .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", api_key))
+        .header(
+            "Authorization",
+            format!("Bearer {}", params.chat_gpt_api_token.as_ref()),
+        )
         .json(&chat_request)
         .timeout(GPT_REQUEST_TIMEOUT)
         .send()
