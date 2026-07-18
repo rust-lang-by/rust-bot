@@ -61,3 +61,32 @@ async fn url_summary_fetches_article_summarizes_and_replies() {
     assert!(body.contains("TLDR"), "sendMessage body: {body}");
     assert!(body.contains(canned_summary), "sendMessage body: {body}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn url_summary_unreachable_source_does_not_reply() {
+    let pg = spawn_postgres().await;
+    let redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (_openai, openai_url) = spawn_openai("unused").await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+
+    // Port 1 refuses connections immediately, so `get_content_call` errors,
+    // `handle_url_summary` returns `Err`, and the dispatcher logs + swallows it.
+    // The dispatcher still routes (dispatch_one asserts no panic) and no reply
+    // goes out.
+    let update = text_message_update("посмотри http://127.0.0.1:1/article", -1004000, 88, 1);
+    dispatch_one(bot, pg.pool.clone(), gpt, update).await;
+
+    let telegram_requests = telegram
+        .received_requests()
+        .await
+        .expect("collect telegram requests");
+    let send_count = telegram_requests
+        .iter()
+        .filter(|r| r.url.path().ends_with("/SendMessage"))
+        .count();
+    assert_eq!(
+        send_count, 0,
+        "no reply should be sent when the article source is unreachable"
+    );
+}
