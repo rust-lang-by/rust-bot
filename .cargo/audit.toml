@@ -1,0 +1,12 @@
+# cargo-audit / rustsec advisory triage.
+# Both advisories below have NO fixed upgrade available and neither ships in
+# the deployed binary; revisit when upstream publishes a fix.
+[advisories]
+ignore = [
+    # rsa timing sidechannel (Marvin). Phantom Cargo.lock entry pulled by
+    # sqlx's unused mysql backend — not compiled into any target we build.
+    "RUSTSEC-2023-0071",
+    # tokio-tar PAX header smuggling. Dev-dependency only (testcontainers),
+    # never present in the production artifact.
+    "RUSTSEC-2025-0111",
+]
