@@ -132,7 +132,7 @@ pub fn build_handler() -> UpdateHandler<RequestError> {
     )
 }
 
-pub async fn run(deps: AppDeps) {
+pub async fn run(deps: AppDeps) -> anyhow::Result<()> {
     let AppDeps {
         bot,
         db_pool,
@@ -149,6 +149,7 @@ pub async fn run(deps: AppDeps) {
         .build()
         .dispatch()
         .await;
+    Ok(())
 }
 
 pub fn message_has_url(regex: &Regex, message_text: &str, text: &MediaText) -> bool {
