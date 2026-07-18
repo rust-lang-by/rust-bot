@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use chrono::Duration;
 use redis::aio::ConnectionManager;
@@ -27,6 +27,20 @@ const MIN_TIME_DIFF: i64 = 15;
 
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1/chat/completions";
 
+// Compile each mention regex exactly once. The patterns are compile-time
+// constants, so `expect` here can only fire on a developer typo — never at
+// runtime — which is why it is an accepted panic site.
+static RUST_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(RUST_REGEX).expect("RUST_REGEX must compile"));
+static BLAZING_FAST_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(BLAZING_FAST_REGEX).expect("BLAZING_FAST_REGEX must compile"));
+static GAYNESS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(GAYNESS_REGEX).expect("GAYNESS_REGEX must compile"));
+static CHAT_GPT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(CHAT_GPT_REGEX).expect("CHAT_GPT_REGEX must compile"));
+static URL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(URL_REGEX).expect("URL_REGEX must compile"));
+
 #[derive(Clone)]
 pub struct GptParameters {
     pub chat_gpt_api_token: Arc<str>,
@@ -48,11 +62,11 @@ pub struct MentionParameters {
 impl Default for MentionParameters {
     fn default() -> Self {
         Self {
-            rust_regex: Regex::new(RUST_REGEX).expect("Can't compile regex"),
-            blazing_fast_regex: Regex::new(BLAZING_FAST_REGEX).expect("Can't compile regex"),
-            gayness_regex: Regex::new(GAYNESS_REGEX).expect("Can't compile regex"),
-            chat_gpt_regex: Regex::new(CHAT_GPT_REGEX).expect("Can't compile regex"),
-            url_regex: Regex::new(URL_REGEX).expect("Can't compile regex"),
+            rust_regex: RUST_RE.clone(),
+            blazing_fast_regex: BLAZING_FAST_RE.clone(),
+            gayness_regex: GAYNESS_RE.clone(),
+            chat_gpt_regex: CHAT_GPT_RE.clone(),
+            url_regex: URL_RE.clone(),
             req_time_diff: Duration::minutes(MIN_TIME_DIFF),
         }
     }

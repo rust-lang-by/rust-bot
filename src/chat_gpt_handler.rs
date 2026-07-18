@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{System, User};
@@ -34,35 +34,43 @@ const FERRIS_CHAT_GPT_SYSTEM_CONTEXT: &str = "Ты чат-бот Rust комью
 Твоя задача вызвать у собеседника интерес к языку Rust. \
 Ты любишь рассказывать забавные факты о языке Rust.";
 
-static BOT_PROFILES: OnceLock<Vec<BotConfiguration<'static>>> = OnceLock::new();
+// Bot profiles and the summary-request regex are compile-time constants, so
+// these initializers can only panic on a developer typo, never at runtime.
+// `LazyLock` (vs the previous `OnceLock`) also guarantees the profiles are
+// always populated — `handle_reply` below used to silently no-op if a reply
+// arrived before the first `handle_chat_gpt_question` had initialized them.
+static BOT_PROFILES: LazyLock<Vec<BotConfiguration<'static>>> = LazyLock::new(|| {
+    vec![
+        BotConfiguration {
+            profile: Fedor,
+            mention_regex: Regex::new(r"(?i)(fedor|ф[её]дор|федя)")
+                .expect("Fedor mention regex must compile"),
+            gpt_system_context: FEDOR_CHAT_GPT_SYSTEM_CONTEXT,
+        },
+        BotConfiguration {
+            profile: Felix,
+            mention_regex: Regex::new(r"(?i)(felix|феликс)")
+                .expect("Felix mention regex must compile"),
+            gpt_system_context: FELIX_CHAT_GPT_SYSTEM_CONTEXT,
+        },
+        BotConfiguration {
+            profile: Ferris,
+            mention_regex: Regex::new(r"(?i)(feris|ferris|ферис|феррис)")
+                .expect("Ferris mention regex must compile"),
+            gpt_system_context: FERRIS_CHAT_GPT_SYSTEM_CONTEXT,
+        },
+    ]
+});
 const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш].о?\b.*\bпроисходит)";
-static CHAT_SUMMARY_REQUEST_REGEX: OnceLock<Regex> = OnceLock::new();
+static CHAT_SUMMARY_REQUEST_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(SUMMARY_REQUEST_REGEX).expect("SUMMARY_REQUEST_REGEX must compile")
+});
 
 pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &GptParameters) {
     let chat_id = msg.chat.id;
     let message = msg.text().expect("can't parse incoming message");
     info!("gpt invocation: chat_id: {chat_id}, message: {message}");
-    let bot_profiles = BOT_PROFILES.get_or_init(|| {
-        vec![
-            BotConfiguration {
-                profile: Fedor,
-                mention_regex: Regex::new(r"(?i)(fedor|ф[её]дор|федя)")
-                    .expect("Can't compile regex"),
-                gpt_system_context: FEDOR_CHAT_GPT_SYSTEM_CONTEXT,
-            },
-            BotConfiguration {
-                profile: Felix,
-                mention_regex: Regex::new(r"(?i)(felix|феликс)").expect("Can't compile regex"),
-                gpt_system_context: FELIX_CHAT_GPT_SYSTEM_CONTEXT,
-            },
-            BotConfiguration {
-                profile: Ferris,
-                mention_regex: Regex::new(r"(?i)(feris|ferris|ферис|феррис)")
-                    .expect("Can't compile regex"),
-                gpt_system_context: FERRIS_CHAT_GPT_SYSTEM_CONTEXT,
-            },
-        ]
-    });
+    let bot_profiles = &*BOT_PROFILES;
     let bot_configuration = bot_profiles
         .iter()
         .find(|&x| x.is_correct_config(message))
@@ -72,8 +80,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &G
         role: User,
         content: message.to_string(),
     };
-    let summary_request_regex = CHAT_SUMMARY_REQUEST_REGEX
-        .get_or_init(|| Regex::new(SUMMARY_REQUEST_REGEX).expect("Can't compile regex"));
+    let summary_request_regex = &*CHAT_SUMMARY_REQUEST_REGEX;
     let mut redis_cm = gpt_parameters.redis_connection_manager.clone();
     let context = match summary_request_regex.is_match(message) {
         true => {
@@ -176,42 +183,40 @@ pub async fn handle_reply(
             "truing to reply chat_id:{chat_id:#?}, msg_id: {:?}, thread_id: {:#?}",
             msg.id, msg.thread_id
         );
-        if let Some(bot_profiles) = BOT_PROFILES.get() {
-            let bot_configuration = bot_profiles
-                .iter()
-                .find(|&x| x.profile == reply_msg_bot_profile)
-                .unwrap_or(&bot_profiles[0]);
-            let bot_context_key =
-                &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
-            let user_message = ChatMessage {
-                role: User,
-                content: message.to_string(),
-            };
-            let context = fetch_bot_context(
-                &mut redis_cm,
-                bot_context_key,
-                &user_message,
-                bot_configuration.gpt_system_context,
-            )
+        let bot_profiles = &*BOT_PROFILES;
+        let bot_configuration = bot_profiles
+            .iter()
+            .find(|&x| x.profile == reply_msg_bot_profile)
+            .unwrap_or(&bot_profiles[0]);
+        let bot_context_key = &format!("{:#?}:chat:{:#?}", bot_configuration.profile, chat_id.0);
+        let user_message = ChatMessage {
+            role: User,
+            content: message.to_string(),
+        };
+        let context = fetch_bot_context(
+            &mut redis_cm,
+            bot_context_key,
+            &user_message,
+            bot_configuration.gpt_system_context,
+        )
+        .await;
+
+        let gpt_response_message =
+            gpt_service::chat_gpt_call(gpt_parameters, chat_id, context).await;
+        let bot_reply_msg_response = bot
+            .send_message(chat_id, &gpt_response_message.content)
+            .reply_parameters(ReplyParameters::new(msg.id))
             .await;
 
-            let gpt_response_message =
-                gpt_service::chat_gpt_call(gpt_parameters, chat_id, context).await;
-            let bot_reply_msg_response = bot
-                .send_message(chat_id, &gpt_response_message.content)
-                .reply_parameters(ReplyParameters::new(msg.id))
-                .await;
-
-            update_bot_context_and_identifiers(
-                &mut redis_cm,
-                bot_configuration.profile,
-                bot_context_key,
-                &user_message,
-                &gpt_response_message,
-                bot_reply_msg_response,
-            )
-            .await;
-        }
+        update_bot_context_and_identifiers(
+            &mut redis_cm,
+            bot_configuration.profile,
+            bot_context_key,
+            &user_message,
+            &gpt_response_message,
+            bot_reply_msg_response,
+        )
+        .await;
     }
 }
 
