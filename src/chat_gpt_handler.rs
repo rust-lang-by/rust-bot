@@ -5,7 +5,7 @@ use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{System, User};
 use crate::gpt_service::{ChatMessage, ChatMessageRole};
 use crate::{chat_repository, gpt_service, AppError, GptParameters};
-use log::{error, info};
+use log::{error, info, warn};
 use redis::aio::ConnectionManager;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -151,7 +151,7 @@ async fn update_bot_context_and_identifiers(
                 context_update,
             )
             .await
-            .map_err(|err| error!("Can't update context in Redis: {err:?}"))
+            .inspect_err(|err| warn!("Can't update context in Redis: {err:?}"))
             .ok();
             let chat_key = &format!("chat:{:#?}", bot_reply_msg.chat.id.0);
             chat_repository::push_bot_msg_identifier(
@@ -161,7 +161,7 @@ async fn update_bot_context_and_identifiers(
                 bot_profile,
             )
             .await
-            .map_err(|err| error!("Can't update context in Redis: {err:?}"))
+            .inspect_err(|err| warn!("Can't update context in Redis: {err:?}"))
             .ok();
         }
     }

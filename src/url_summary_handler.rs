@@ -1,7 +1,7 @@
 use crate::gpt_service::ChatMessage;
 use crate::gpt_service::ChatMessageRole::{System, User};
 use crate::{gpt_service, AppError, GptParameters};
-use log::{error, info};
+use log::{info, warn};
 use regex::Regex;
 use reqwest::Client;
 use std::time::Duration;
@@ -59,12 +59,12 @@ pub async fn handle_url_summary(
         reply_msg
             .message_thread_id(thread_id)
             .await
-            .map_err(|err| error!("Can't send reply: {:?}", err))
+            .inspect_err(|err| warn!("Can't send reply: {err:?}"))
             .ok();
     } else {
         reply_msg
             .await
-            .map_err(|err| error!("Can't send reply: {:?}", err))
+            .inspect_err(|err| warn!("Can't send reply: {err:?}"))
             .ok();
     }
     Ok(())

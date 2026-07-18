@@ -1,7 +1,8 @@
+use std::env;
 use std::sync::{Arc, LazyLock};
 
 use chrono::Duration;
-use log::error;
+use log::{error, warn};
 use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{PgPool, Pool, Postgres};
@@ -25,6 +26,10 @@ const GAYNESS_REGEX: &str = r"(\D[0-4]|\D)\d%\Dg";
 const CHAT_GPT_REGEX: &str = r"(?i)(fedor|ф[её]дор|федя|felix|феликс|feris|ferris|ферис|феррис)";
 const URL_REGEX: &str = r#"https?://[^\s<>"{}|\\^`\[\]]*"#;
 const MIN_TIME_DIFF: i64 = 15;
+
+/// Chat where rust mentions are counted but not announced. Overridable via the
+/// `RUST_CHAT_ID` env var; the default preserves the historically hardcoded id.
+const DEFAULT_RUST_CHAT_ID: i64 = -1001228598755;
 
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1/chat/completions";
 
@@ -58,6 +63,7 @@ pub struct MentionParameters {
     pub chat_gpt_regex: Regex,
     pub url_regex: Regex,
     pub req_time_diff: Duration,
+    pub rust_chat_id: i64,
 }
 
 impl Default for MentionParameters {
@@ -69,7 +75,18 @@ impl Default for MentionParameters {
             chat_gpt_regex: CHAT_GPT_RE.clone(),
             url_regex: URL_RE.clone(),
             req_time_diff: Duration::minutes(MIN_TIME_DIFF),
+            rust_chat_id: rust_chat_id_from_env(),
         }
+    }
+}
+
+fn rust_chat_id_from_env() -> i64 {
+    match env::var("RUST_CHAT_ID") {
+        Ok(raw) => raw.parse().unwrap_or_else(|_| {
+            warn!("RUST_CHAT_ID='{raw}' is not a valid i64; using default {DEFAULT_RUST_CHAT_ID}");
+            DEFAULT_RUST_CHAT_ID
+        }),
+        Err(_) => DEFAULT_RUST_CHAT_ID,
     }
 }
 
@@ -121,6 +138,7 @@ pub fn build_handler() -> UpdateHandler<RequestError> {
                                 msg,
                                 db_pool,
                                 mention_parameters.req_time_diff,
+                                mention_parameters.rust_chat_id,
                             )
                             .await
                         }
