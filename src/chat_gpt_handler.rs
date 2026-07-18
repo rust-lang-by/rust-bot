@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::sync::LazyLock;
 
+use crate::boot::compile_regex;
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{System, User};
 use crate::gpt_service::{ChatMessage, ChatMessageRole};
@@ -43,28 +44,24 @@ static BOT_PROFILES: LazyLock<Vec<BotConfiguration<'static>>> = LazyLock::new(||
     vec![
         BotConfiguration {
             profile: Fedor,
-            mention_regex: Regex::new(r"(?i)(fedor|ф[её]дор|федя)")
-                .expect("Fedor mention regex must compile"),
+            mention_regex: compile_regex(r"(?i)(fedor|ф[её]дор|федя)"),
             gpt_system_context: FEDOR_CHAT_GPT_SYSTEM_CONTEXT,
         },
         BotConfiguration {
             profile: Felix,
-            mention_regex: Regex::new(r"(?i)(felix|феликс)")
-                .expect("Felix mention regex must compile"),
+            mention_regex: compile_regex(r"(?i)(felix|феликс)"),
             gpt_system_context: FELIX_CHAT_GPT_SYSTEM_CONTEXT,
         },
         BotConfiguration {
             profile: Ferris,
-            mention_regex: Regex::new(r"(?i)(feris|ferris|ферис|феррис)")
-                .expect("Ferris mention regex must compile"),
+            mention_regex: compile_regex(r"(?i)(feris|ferris|ферис|феррис)"),
             gpt_system_context: FERRIS_CHAT_GPT_SYSTEM_CONTEXT,
         },
     ]
 });
 const SUMMARY_REQUEST_REGEX: &str = r"(?i)([чш].о?\b.*\bпроисходит)";
-static CHAT_SUMMARY_REQUEST_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(SUMMARY_REQUEST_REGEX).expect("SUMMARY_REQUEST_REGEX must compile")
-});
+static CHAT_SUMMARY_REQUEST_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| compile_regex(SUMMARY_REQUEST_REGEX));
 
 pub async fn handle_chat_gpt_question(
     bot: Bot,

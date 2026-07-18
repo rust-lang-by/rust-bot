@@ -17,12 +17,21 @@ pub async fn get_bot_context(
     timeout_cmd(connection_manager.lrange(key, 0, 11)).await
 }
 
+/// Serialize a value for storage in Redis. Serialization of these plain,
+/// owned structs is infallible in practice, and `ToRedisArgs::write_redis_args`
+/// has no channel to report an error, so the `expect` is a sanctioned panic
+/// site (guarded by the crate-level `expect_used` deny).
+#[allow(clippy::expect_used)]
+fn to_redis_json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).expect("value must serialize to JSON for Redis")
+}
+
 impl ToRedisArgs for ChatMessage {
     fn write_redis_args<W>(&self, out: &mut W)
     where
         W: ?Sized + RedisWrite,
     {
-        out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
+        out.write_arg_fmt(to_redis_json(self))
     }
 }
 
@@ -38,7 +47,7 @@ impl ToRedisArgs for BotProfile {
     where
         W: ?Sized + RedisWrite,
     {
-        out.write_arg_fmt(serde_json::to_string(self).expect("Can't serialize Context as string"))
+        out.write_arg_fmt(to_redis_json(self))
     }
 }
 

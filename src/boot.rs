@@ -34,18 +34,21 @@ const DEFAULT_RUST_CHAT_ID: i64 = -1001228598755;
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1/chat/completions";
 
 // Compile each mention regex exactly once. The patterns are compile-time
-// constants, so `expect` here can only fire on a developer typo — never at
-// runtime — which is why it is an accepted panic site.
-static RUST_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(RUST_REGEX).expect("RUST_REGEX must compile"));
-static BLAZING_FAST_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(BLAZING_FAST_REGEX).expect("BLAZING_FAST_REGEX must compile"));
-static GAYNESS_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(GAYNESS_REGEX).expect("GAYNESS_REGEX must compile"));
-static CHAT_GPT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(CHAT_GPT_REGEX).expect("CHAT_GPT_REGEX must compile"));
-static URL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(URL_REGEX).expect("URL_REGEX must compile"));
+// constants, so a failure can only be a developer typo, never a runtime error.
+static RUST_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(RUST_REGEX));
+static BLAZING_FAST_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(BLAZING_FAST_REGEX));
+static GAYNESS_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(GAYNESS_REGEX));
+static CHAT_GPT_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(CHAT_GPT_REGEX));
+static URL_RE: LazyLock<Regex> = LazyLock::new(|| compile_regex(URL_REGEX));
+
+/// Compile a compile-time-constant regex pattern. The `expect` is the one
+/// sanctioned panic path (guarded by the crate-level `unwrap_used`/`expect_used`
+/// deny): a bad pattern is a source bug caught immediately by the tests, not a
+/// runtime failure on user input.
+#[allow(clippy::expect_used)]
+pub(crate) fn compile_regex(pattern: &str) -> Regex {
+    Regex::new(pattern).expect("regex pattern must compile")
+}
 
 #[derive(Clone)]
 pub struct GptParameters {
