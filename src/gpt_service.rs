@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use teloxide::types::ChatId;
 
-use crate::GptParameters;
+use crate::{AppError, GptParameters};
 
 const GPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 
@@ -43,14 +43,18 @@ pub async fn chat_gpt_call(
     chat_id: ChatId,
     messages: Vec<ChatMessage>,
 ) -> ChatMessage {
+    let fallback = || ChatMessage {
+        role: ChatMessageRole::Assistant,
+        content: "Братан, давай папазжей, занят сейчас.".to_owned(),
+    };
     match gpt_call(params, chat_id, messages).await {
-        Ok(choices) => choices[0].message.to_owned(),
+        Ok(choices) => choices
+            .into_iter()
+            .next()
+            .map_or_else(fallback, |choice| choice.message),
         Err(err) => {
             error!("Can't execute chat_gpt_call: {}", err);
-            ChatMessage {
-                role: ChatMessageRole::Assistant,
-                content: "Братан, давай папазжей, занят сейчас.".to_owned(),
-            }
+            fallback()
         }
     }
 }
@@ -59,7 +63,7 @@ async fn gpt_call(
     params: &GptParameters,
     chat_id: ChatId,
     messages: Vec<ChatMessage>,
-) -> Result<Vec<Choice>, Box<dyn std::error::Error>> {
+) -> Result<Vec<Choice>, AppError> {
     info!(
         "gpt call invocation from chat_id: {} with context: {:#?}",
         chat_id, messages

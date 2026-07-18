@@ -1,6 +1,6 @@
 use crate::gpt_service::ChatMessage;
 use crate::gpt_service::ChatMessageRole::{System, User};
-use crate::{gpt_service, GptParameters};
+use crate::{gpt_service, AppError, GptParameters};
 use log::{error, info};
 use regex::Regex;
 use reqwest::Client;
@@ -19,53 +19,55 @@ pub async fn handle_url_summary(
     msg: Message,
     url_regex: Regex,
     gpt_parameters: &GptParameters,
-) {
-    if let Common(MessageCommon {
+) -> Result<(), AppError> {
+    let Common(MessageCommon {
         media_kind: Text(media_text),
         ..
     }) = msg.kind
-    {
-        let msg_text = &media_text.text;
-        let chat_id = msg.chat.id;
-        info!(
-            "url summary invocation: chat_id: {}, msg {}",
-            chat_id, msg_text
-        );
-        let url = url_regex
-            .find(msg_text)
-            .map(|m| m.as_str().to_string())
-            .or(find_link(&media_text));
-        let Some(url) = url else {
-            info!("No URL found in message: {}", msg_text);
-            return;
-        };
+    else {
+        return Ok(());
+    };
 
-        let content = get_content_call(&gpt_parameters.http_client, &url)
-            .await
-            .unwrap();
-        let clean_content = html2text::from_read(content.as_bytes(), 120).unwrap();
-        // Check if the content is long enough to summarize
-        if clean_content.len() < 1000 {
-            return;
-        }
-        let summary = get_gpt_summary(gpt_parameters, chat_id, clean_content).await;
+    let msg_text = &media_text.text;
+    let chat_id = msg.chat.id;
+    info!(
+        "url summary invocation: chat_id: {}, msg {}",
+        chat_id, msg_text
+    );
+    let url = url_regex
+        .find(msg_text)
+        .map(|m| m.as_str().to_string())
+        .or(find_link(&media_text));
+    let Some(url) = url else {
+        info!("No URL found in message: {}", msg_text);
+        return Ok(());
+    };
 
-        let reply_msg = bot
-            .send_message(chat_id, format!("TLDR:\n{}", summary))
-            .reply_parameters(ReplyParameters::new(msg.id));
-        if let Some(thread_id) = msg.thread_id {
-            reply_msg
-                .message_thread_id(thread_id)
-                .await
-                .map_err(|err| error!("Can't send reply: {:?}", err))
-                .ok();
-        } else {
-            reply_msg
-                .await
-                .map_err(|err| error!("Can't send reply: {:?}", err))
-                .ok();
-        }
+    let content = get_content_call(&gpt_parameters.http_client, &url).await?;
+    let clean_content = html2text::from_read(content.as_bytes(), 120)
+        .map_err(|err| AppError::BadInput(format!("failed to parse article HTML: {err}")))?;
+    // Check if the content is long enough to summarize
+    if clean_content.len() < 1000 {
+        return Ok(());
     }
+    let summary = get_gpt_summary(gpt_parameters, chat_id, clean_content).await;
+
+    let reply_msg = bot
+        .send_message(chat_id, format!("TLDR:\n{}", summary))
+        .reply_parameters(ReplyParameters::new(msg.id));
+    if let Some(thread_id) = msg.thread_id {
+        reply_msg
+            .message_thread_id(thread_id)
+            .await
+            .map_err(|err| error!("Can't send reply: {:?}", err))
+            .ok();
+    } else {
+        reply_msg
+            .await
+            .map_err(|err| error!("Can't send reply: {:?}", err))
+            .ok();
+    }
+    Ok(())
 }
 
 fn find_link(media_text: &MediaText) -> Option<String> {
@@ -82,10 +84,7 @@ fn find_link(media_text: &MediaText) -> Option<String> {
         .find_map(|el| el)
 }
 
-async fn get_content_call(
-    client: &Client,
-    url: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+async fn get_content_call(client: &Client, url: &str) -> Result<String, AppError> {
     let response = client
         .get(url)
         .timeout(ARTICLE_EXTRACTION_TIMEOUT)

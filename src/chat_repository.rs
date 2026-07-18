@@ -29,7 +29,7 @@ impl ToRedisArgs for ChatMessage {
 impl FromRedisValue for ChatMessage {
     fn from_redis_value(v: &Value) -> RedisResult<Self> {
         let str_value: String = FromRedisValue::from_redis_value(v)?;
-        Ok(serde_json::from_str(&str_value).expect("Can't deserialize Context as string"))
+        serde_json::from_str(&str_value).map_err(deserialize_error::<Self>)
     }
 }
 
@@ -45,8 +45,18 @@ impl ToRedisArgs for BotProfile {
 impl FromRedisValue for BotProfile {
     fn from_redis_value(v: &Value) -> RedisResult<Self> {
         let str_value: String = FromRedisValue::from_redis_value(v)?;
-        Ok(serde_json::from_str(&str_value).expect("Can't deserialize Context as string"))
+        serde_json::from_str(&str_value).map_err(deserialize_error::<Self>)
     }
+}
+
+/// Translate a serde_json failure while reading a value back from Redis into a
+/// `RedisError` instead of panicking on malformed/corrupted payloads.
+fn deserialize_error<T>(err: serde_json::Error) -> redis::RedisError {
+    redis::RedisError::from((
+        redis::ErrorKind::TypeError,
+        "Can't deserialize value from Redis",
+        format!("{}: {err}", std::any::type_name::<T>()),
+    ))
 }
 
 pub async fn get_chat_history(
