@@ -1,12 +1,11 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use log::{error, info, warn};
+use log::{info, warn};
 use sqlx::PgPool;
 use teloxide::prelude::*;
 use teloxide::types::{InputFile, MessageId, ReplyParameters, ThreadId, User};
 
 use crate::{mention_repository, AppError};
 
-const RUST_CHAT: i64 = -1001228598755;
 const STICKERS: &[&str; 5] = &[
     "CAACAgEAAx0CTdy33AAD3mQO6sc3rzklybqG4MMI4MLXpXJIAAKCAQACaXoxBT0NGBN6KJNELwQ",
     "CAACAgEAAx0CTdy33AACAQFkF6KoodtDg4KfcPHlUk_7SRFN7QACkQEAAml6MQW86C1JCZcTkS8E",
@@ -22,6 +21,7 @@ pub async fn handle_rust_matched_mention(
     message: Message,
     db_pool: PgPool,
     req_time_diff: Duration,
+    rust_chat_id: i64,
 ) -> Result<(), AppError> {
     let message_date = message.date.timestamp();
     let Some(curr_date) = DateTime::from_timestamp(message_date, 0) else {
@@ -48,13 +48,13 @@ pub async fn handle_rust_matched_mention(
         if let Ok(last_mention_time) =
             mention_repository::lead_earliest_mention_time(&db_pool, chat_id.0)
                 .await
-                .map_err(|err| error!("Can't insert mention: {:?}", err))
+                .inspect_err(|err| warn!("Can't fetch latest mention time: {err:?}"))
         {
             let last_update_time = Utc.from_utc_datetime(&last_mention_time);
             info!("latest update time: {}", last_update_time);
 
             let time_diff = curr_date.signed_duration_since(last_update_time);
-            if time_diff > req_time_diff && chat_id.0 != RUST_CHAT {
+            if time_diff > req_time_diff && chat_id.0 != rust_chat_id {
                 let message_ids = (message.id, chat_id, message.thread_id);
                 send_rust_mention_response(bot, message_ids, time_diff, &username).await;
             }
@@ -68,7 +68,7 @@ pub async fn handle_rust_matched_mention(
                     .map_or_else(|| chat_id.0, |id| id.0 .0 as i64),
             )
             .await
-            .map_err(|err| error!("Can't insert mention: {:?}", err))
+            .inspect_err(|err| warn!("Can't insert mention: {err:?}"))
             .ok();
         }
     }
@@ -99,7 +99,7 @@ async fn send_rust_mention_response(
         reply_msg
             .message_thread_id(thread_id)
             .await
-            .map_err(|err| error!("Can't send reply: {:?}", err))
+            .inspect_err(|err| warn!("Can't send reply: {err:?}"))
             .ok();
         bot.send_sticker(
             message_ids.1,
@@ -107,19 +107,19 @@ async fn send_rust_mention_response(
         )
         .message_thread_id(thread_id)
         .await
-        .map_err(|err| error!("Can't send a sticker: {:?}", err))
+        .inspect_err(|err| warn!("Can't send a sticker: {err:?}"))
         .ok();
     } else {
         reply_msg
             .await
-            .map_err(|err| error!("Can't send reply: {:?}", err))
+            .inspect_err(|err| warn!("Can't send reply: {err:?}"))
             .ok();
         bot.send_sticker(
             message_ids.1,
             InputFile::file_id(fetch_sticker_id(time_diff)),
         )
         .await
-        .map_err(|err| error!("Can't send a sticker: {:?}", err))
+        .inspect_err(|err| warn!("Can't send a sticker: {err:?}"))
         .ok();
     }
 }
