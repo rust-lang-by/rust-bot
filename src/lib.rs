@@ -1,3 +1,10 @@
+// Forbid panic-on-unexpected in production code: runtime failures must be
+// modelled as errors (AppError / Result), not `unwrap`/`expect`/`panic!`. The
+// few sanctioned panic sites (compile-time-constant regexes, infallible serde)
+// carry a narrow `#[allow(clippy::expect_used)]`. Test code is exempt.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 pub mod bf_mention_handler;
 pub mod boot;
 pub mod chat_gpt_handler;
