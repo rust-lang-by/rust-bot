@@ -1,6 +1,7 @@
 use std::sync::{Arc, LazyLock};
 
 use chrono::Duration;
+use log::error;
 use redis::aio::ConnectionManager;
 use regex::Regex;
 use sqlx::{PgPool, Pool, Postgres};
@@ -15,7 +16,7 @@ use teloxide::RequestError;
 
 use crate::{
     bf_mention_handler, chat_gpt_handler, gayness_handler, rust_mention_handler,
-    url_summary_handler,
+    url_summary_handler, AppError,
 };
 
 const RUST_REGEX: &str = r"(?i)(rust|раст)(.\W|.$|\W|$)";
@@ -87,7 +88,10 @@ pub fn build_handler() -> UpdateHandler<RequestError> {
              db_pool: Pool<Postgres>,
              gpt_parameters: GptParameters,
              bot: Bot| async move {
-                if let Common(MessageCommon {
+                // Every handler returns `Result<(), AppError>`; errors are
+                // logged once here at the dispatcher boundary and swallowed so
+                // a single bad update never tears down the dispatcher.
+                let outcome: Result<(), AppError> = if let Common(MessageCommon {
                     media_kind: Text(media_text),
                     ..
                 }) = &msg.kind
@@ -121,10 +125,12 @@ pub fn build_handler() -> UpdateHandler<RequestError> {
                             .await
                         }
                         text if mention_parameters.blazing_fast_regex.is_match(text) => {
-                            bf_mention_handler::handle_bf_matched_mention(bot, msg).await
+                            bf_mention_handler::handle_bf_matched_mention(bot, msg).await;
+                            Ok(())
                         }
                         text if mention_parameters.gayness_regex.is_match(text) => {
-                            gayness_handler::handle_gayness_mention(bot, msg).await
+                            gayness_handler::handle_gayness_mention(bot, msg).await;
+                            Ok(())
                         }
                         _ => {
                             if let Some(reply_msg) = &msg.reply_to_message() {
@@ -134,10 +140,18 @@ pub fn build_handler() -> UpdateHandler<RequestError> {
                                     reply_msg,
                                     &gpt_parameters,
                                 )
-                                .await;
+                                .await
+                            } else {
+                                Ok(())
                             }
                         }
                     }
+                } else {
+                    Ok(())
+                };
+
+                if let Err(err) = outcome {
+                    error!("message handler failed: {err}");
                 }
 
                 respond(())

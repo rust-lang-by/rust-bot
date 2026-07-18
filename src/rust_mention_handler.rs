@@ -1,10 +1,10 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use log::{error, info};
+use log::{error, info, warn};
 use sqlx::PgPool;
 use teloxide::prelude::*;
 use teloxide::types::{InputFile, MessageId, ReplyParameters, ThreadId, User};
 
-use crate::mention_repository;
+use crate::{mention_repository, AppError};
 
 const RUST_CHAT: i64 = -1001228598755;
 const STICKERS: &[&str; 5] = &[
@@ -22,9 +22,12 @@ pub async fn handle_rust_matched_mention(
     message: Message,
     db_pool: PgPool,
     req_time_diff: Duration,
-) {
+) -> Result<(), AppError> {
     let message_date = message.date.timestamp();
-    let curr_date = DateTime::from_timestamp(message_date, 0).unwrap();
+    let Some(curr_date) = DateTime::from_timestamp(message_date, 0) else {
+        warn!("skipping rust mention: nonsensical message timestamp {message_date}");
+        return Ok(());
+    };
     info!(
         "rust mention invocation: chat_id: {}, time: {}",
         message.chat.id, curr_date
@@ -69,6 +72,7 @@ pub async fn handle_rust_matched_mention(
             .ok();
         }
     }
+    Ok(())
 }
 
 async fn send_rust_mention_response(

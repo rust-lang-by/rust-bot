@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use crate::chat_gpt_handler::BotProfile::{Fedor, Felix, Ferris};
 use crate::chat_gpt_handler::ChatMessageRole::{System, User};
 use crate::gpt_service::{ChatMessage, ChatMessageRole};
-use crate::{chat_repository, gpt_service, GptParameters};
+use crate::{chat_repository, gpt_service, AppError, GptParameters};
 use log::{error, info};
 use redis::aio::ConnectionManager;
 use regex::Regex;
@@ -66,9 +66,15 @@ static CHAT_SUMMARY_REQUEST_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(SUMMARY_REQUEST_REGEX).expect("SUMMARY_REQUEST_REGEX must compile")
 });
 
-pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &GptParameters) {
+pub async fn handle_chat_gpt_question(
+    bot: Bot,
+    msg: Message,
+    gpt_parameters: &GptParameters,
+) -> Result<(), AppError> {
     let chat_id = msg.chat.id;
-    let message = msg.text().expect("can't parse incoming message");
+    let Some(message) = msg.text() else {
+        return Ok(());
+    };
     info!("gpt invocation: chat_id: {chat_id}, message: {message}");
     let bot_profiles = &*BOT_PROFILES;
     let bot_configuration = bot_profiles
@@ -124,6 +130,7 @@ pub async fn handle_chat_gpt_question(bot: Bot, msg: Message, gpt_parameters: &G
         bot_reply_msg_response,
     )
     .await;
+    Ok(())
 }
 
 async fn update_bot_context_and_identifiers(
@@ -165,9 +172,11 @@ pub async fn handle_reply(
     msg: &Message,
     reply_msg: &Message,
     gpt_parameters: &GptParameters,
-) {
+) -> Result<(), AppError> {
     info!("handle reply gpt question");
-    let message = msg.text().expect("can't parse incoming message");
+    let Some(message) = msg.text() else {
+        return Ok(());
+    };
     let chat_id = msg.chat.id;
     let chat_key = &format!("chat:{:#?}", chat_id.0);
     info!("chat_key: {chat_key:?}");
@@ -218,6 +227,7 @@ pub async fn handle_reply(
         )
         .await;
     }
+    Ok(())
 }
 
 async fn fetch_chat_summary_context(
