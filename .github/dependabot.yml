@@ -5,6 +5,14 @@ updates:
     directory: "/"
     schedule:
       interval: daily
+    # testcontainers-modules pins a specific testcontainers version, so the two
+    # must be bumped together — otherwise each lone PR splits the testcontainers
+    # version in the dependency graph and fails to compile the e2e tests.
+    groups:
+      testcontainers:
+        patterns:
+          - "testcontainers"
+          - "testcontainers-modules"
 
   # Maintain dependencies for Docker
   - package-ecosystem: "docker"
