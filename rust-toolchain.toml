@@ -1,0 +1,5 @@
+[toolchain]
+# Keep in lockstep with the Rust version pinned in the Dockerfile so local,
+# CI, and production builds all use the same compiler.
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
