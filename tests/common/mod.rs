@@ -192,6 +192,50 @@ pub fn text_message_update(text: &str, chat_id: i64, user_id: i64, message_id: i
     serde_json::from_str(&serialized).expect("build Update")
 }
 
+/// Like [`text_message_update`], but the message is a reply to an earlier
+/// (bot) message with id `reply_to_message_id` — needed to route through the
+/// `handle_reply` branch of the dispatcher.
+pub fn reply_message_update(
+    text: &str,
+    chat_id: i64,
+    user_id: i64,
+    message_id: i32,
+    reply_to_message_id: i32,
+) -> Update {
+    let now = chrono::Utc::now().timestamp();
+    let chat = json!({ "id": chat_id, "type": "supergroup", "title": "test-chat" });
+    let value: Value = json!({
+        "update_id": message_id,
+        "message": {
+            "message_id": message_id,
+            "date": now,
+            "chat": chat.clone(),
+            "from": {
+                "id": user_id,
+                "is_bot": false,
+                "first_name": "Alice",
+                "username": "alice"
+            },
+            "text": text,
+            "entities": [],
+            "reply_to_message": {
+                "message_id": reply_to_message_id,
+                "date": now,
+                "chat": chat,
+                "from": {
+                    "id": 1,
+                    "is_bot": true,
+                    "first_name": "TestBot",
+                    "username": "test_bot"
+                },
+                "text": "previous bot message"
+            }
+        }
+    });
+    let serialized = serde_json::to_string(&value).expect("serialize update json");
+    serde_json::from_str(&serialized).expect("build reply Update")
+}
+
 /// Build deps, dispatch a single update through the real handler tree, and
 /// fail fast if anything stalls.
 pub async fn dispatch_one(bot: Bot, pool: PgPool, gpt_parameters: GptParameters, update: Update) {
