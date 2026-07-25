@@ -17,8 +17,12 @@ permissions:
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    # Only act on Dependabot's own PRs.
-    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+    # Only act on events Dependabot itself triggered (opened the PR or rebased
+    # it). Gating on `github.actor` — not the PR author — matches what
+    # dependabot/fetch-metadata requires: when a human triggers the event (e.g.
+    # clicks "Update branch"), github.actor is that human and fetch-metadata
+    # aborts with "PR is not from Dependabot". Skipping the job avoids that.
+    if: ${{ github.actor == 'dependabot[bot]' }}
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
