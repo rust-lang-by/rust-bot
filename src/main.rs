@@ -10,7 +10,7 @@ use sqlx::PgPool;
 use teloxide::prelude::*;
 use tokio_util::sync::CancellationToken;
 
-use rust_bot::hn_digest::{self, HnDigestConfig};
+use rust_bot::hn_digest::{self, HnDigestConfig, HnDigestParameters};
 use rust_bot::{AppDeps, GptParameters, MentionParameters, DEFAULT_OPENAI_BASE_URL};
 
 #[tokio::main]
@@ -56,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         db_pool,
         gpt_parameters,
         mention_parameters: MentionParameters::default(),
+        hn_digest_parameters: HnDigestParameters::default(),
     };
 
     let bot_run = rust_bot::run(deps);

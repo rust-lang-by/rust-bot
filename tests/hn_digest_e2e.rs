@@ -2,8 +2,9 @@ mod common;
 
 use chrono::NaiveTime;
 use common::*;
-use rust_bot::hn_digest::{run_digest, HnDigestConfig};
+use rust_bot::hn_digest::{run_digest, HnDigestConfig, HnDigestParameters};
 use serde_json::{json, Value};
+use std::sync::Arc;
 use teloxide::types::ChatId;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -170,4 +171,133 @@ async fn hn_digest_posts_nothing_when_top_stories_unavailable() {
         .filter(|r| r.url.path().ends_with("/SendMessage"))
         .count();
     assert_eq!(send_count, 0);
+}
+
+async fn sent_messages(telegram: &MockServer) -> Vec<Value> {
+    telegram
+        .received_requests()
+        .await
+        .expect("collect telegram requests")
+        .iter()
+        .filter(|r| r.url.path().ends_with("/SendMessage"))
+        .map(|r| serde_json::from_slice(&r.body).expect("sendMessage body is JSON"))
+        .collect()
+}
+
+fn hn_parameters(hn: &MockServer) -> HnDigestParameters {
+    HnDigestParameters {
+        hn_api_base_url: Arc::from(format!("{}/v0", hn.uri())),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hn_digest_command_replies_with_three_stories_by_default() {
+    let pg = spawn_postgres().await;
+    let redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (openai, openai_url) = spawn_openai("- summary").await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+    let articles = spawn_articles().await;
+    let hn = spawn_hn(&articles).await;
+
+    let chat_id = -1008001_i64;
+    let command_message_id = 7;
+    let update = text_message_update("/hn_digest", chat_id, 55, command_message_id);
+    dispatch_one_with_hn(bot, pg.pool.clone(), gpt, hn_parameters(&hn), update).await;
+
+    let openai_calls = openai
+        .received_requests()
+        .await
+        .expect("collect openai requests");
+    assert_eq!(openai_calls.len(), 3, "one summary per story");
+
+    let sent = sent_messages(&telegram).await;
+    assert_eq!(sent.len(), 3, "{sent:#?}");
+    for (index, body) in sent.iter().enumerate() {
+        assert_eq!(body["chat_id"], json!(chat_id), "{body:#?}");
+        assert_eq!(body["parse_mode"], json!("HTML"), "{body:#?}");
+        assert_eq!(
+            body["reply_parameters"]["message_id"],
+            json!(command_message_id),
+            "{body:#?}"
+        );
+        let text = body["text"].as_str().expect("text");
+        assert!(text.starts_with(&format!("#{} ", index + 1)), "{text}");
+    }
+    let texts: Vec<&str> = sent.iter().filter_map(|b| b["text"].as_str()).collect();
+    assert!(
+        texts[0].contains("Rust &lt;3 &amp; you</a>"),
+        "{}",
+        texts[0]
+    );
+    assert!(texts[1].contains("Second story</a>"), "{}", texts[1]);
+    assert!(texts[2].contains("Not needed</a>"), "{}", texts[2]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hn_digest_command_alias_honours_requested_count() {
+    let pg = spawn_postgres().await;
+    let redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (_openai, openai_url) = spawn_openai("- summary").await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+    let articles = spawn_articles().await;
+    let hn = spawn_hn(&articles).await;
+
+    let update = text_message_update("/hn-digest@rust_by_bot 1", -1008002, 56, 3);
+    dispatch_one_with_hn(bot, pg.pool.clone(), gpt, hn_parameters(&hn), update).await;
+
+    let sent = sent_messages(&telegram).await;
+    assert_eq!(sent.len(), 1, "{sent:#?}");
+    let text = sent[0]["text"].as_str().expect("text");
+    assert!(text.contains("Rust &lt;3 &amp; you</a>"), "{text}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hn_digest_command_with_invalid_count_replies_usage() {
+    let pg = spawn_postgres().await;
+    let redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (openai, openai_url) = spawn_openai("unused").await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+    let hn = MockServer::start().await;
+
+    let update = text_message_update("/hn_digest 42", -1008003, 57, 4);
+    dispatch_one_with_hn(bot, pg.pool.clone(), gpt, hn_parameters(&hn), update).await;
+
+    let hn_calls = hn.received_requests().await.expect("collect hn requests");
+    assert!(hn_calls.is_empty(), "usage reply must not hit HN");
+    let openai_calls = openai
+        .received_requests()
+        .await
+        .expect("collect openai requests");
+    assert!(openai_calls.is_empty(), "usage reply must not hit the LLM");
+
+    let sent = sent_messages(&telegram).await;
+    assert_eq!(sent.len(), 1, "{sent:#?}");
+    let text = sent[0]["text"].as_str().expect("text");
+    assert!(text.contains("/hn_digest [1-10]"), "{text}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hn_digest_command_reports_failure_when_hn_unavailable() {
+    let pg = spawn_postgres().await;
+    let redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (_openai, openai_url) = spawn_openai("unused").await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+    let hn = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v0/topstories.json"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&hn)
+        .await;
+
+    let update = text_message_update("/hn_digest", -1008004, 58, 5);
+    dispatch_one_with_hn(bot, pg.pool.clone(), gpt, hn_parameters(&hn), update).await;
+
+    let sent = sent_messages(&telegram).await;
+    assert_eq!(sent.len(), 1, "{sent:#?}");
+    let text = sent[0]["text"].as_str().expect("text");
+    assert!(text.contains("HN дайджест"), "{text}");
 }

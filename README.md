@@ -23,6 +23,9 @@ Telegram bot triggered by rust word.
    | `HN_DIGEST_RUN_ON_STARTUP` | `false` | Also post once at startup. For local testing only — every restart/deploy posts again. |
 
 
+   On-demand digest: in any group the bot is in, send `/hn_digest [1-10]` (default `3`; `/hn-digest` also works). The bot replies with that many summarized top stories; an invalid count gets a usage hint. Works whether or not the daily digest is enabled.
+
+
 2. Create the database.
 
     ```$ sqlx db create```

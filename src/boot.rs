@@ -15,6 +15,7 @@ use teloxide::types::MessageKind::Common;
 use teloxide::types::{MediaText, MessageCommon};
 use teloxide::RequestError;
 
+use crate::hn_digest::{self, HnDigestParameters};
 use crate::{
     bf_mention_handler, chat_gpt_handler, gayness_handler, rust_mention_handler,
     url_summary_handler, AppError,
@@ -98,6 +99,7 @@ pub struct AppDeps {
     pub db_pool: PgPool,
     pub gpt_parameters: GptParameters,
     pub mention_parameters: MentionParameters,
+    pub hn_digest_parameters: HnDigestParameters,
 }
 
 pub fn build_handler() -> UpdateHandler<RequestError> {
@@ -107,6 +109,7 @@ pub fn build_handler() -> UpdateHandler<RequestError> {
              mention_parameters: MentionParameters,
              db_pool: Pool<Postgres>,
              gpt_parameters: GptParameters,
+             hn_digest_parameters: HnDigestParameters,
              bot: Bot| async move {
                 // Every handler returns `Result<(), AppError>`; errors are
                 // logged once here at the dispatcher boundary and swallowed so
@@ -117,6 +120,15 @@ pub fn build_handler() -> UpdateHandler<RequestError> {
                 }) = &msg.kind
                 {
                     match &media_text.text {
+                        text if hn_digest::is_hn_digest_command(text) => {
+                            hn_digest::handle_hn_digest_command(
+                                bot,
+                                msg,
+                                &gpt_parameters,
+                                &hn_digest_parameters,
+                            )
+                            .await
+                        }
                         text if mention_parameters.chat_gpt_regex.is_match(text) => {
                             chat_gpt_handler::handle_chat_gpt_question(bot, msg, &gpt_parameters)
                                 .await
@@ -187,10 +199,16 @@ pub async fn run(deps: AppDeps) -> anyhow::Result<()> {
         db_pool,
         gpt_parameters,
         mention_parameters,
+        hn_digest_parameters,
     } = deps;
     let handler = build_handler();
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![mention_parameters, db_pool, gpt_parameters])
+        .dependencies(dptree::deps![
+            mention_parameters,
+            db_pool,
+            gpt_parameters,
+            hn_digest_parameters
+        ])
         .error_handler(LoggingErrorHandler::with_custom_text(
             "An error has occurred in the dispatcher",
         ))

@@ -1,10 +1,12 @@
 //! Daily Hacker News digest: summarize the top linked stories once and post
 //! them to every configured chat.
 
+mod command;
 mod config;
 mod hn_api;
 mod message;
 
+pub use command::{handle_hn_digest_command, is_hn_digest_command};
 pub use config::{HnDigestConfig, DEFAULT_HN_API_BASE_URL};
 
 use crate::{article_summary, GptParameters};
@@ -12,13 +14,31 @@ use chrono::{DateTime, Days, NaiveTime, Utc};
 use log::{error, info, warn};
 use message::DigestEntry;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 use teloxide::prelude::*;
-use teloxide::types::ParseMode;
+use teloxide::types::{MessageId, ParseMode, ReplyParameters, ThreadId};
+use teloxide::RequestError;
+use thiserror::Error;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 const PAUSE_BETWEEN_MESSAGES: Duration = Duration::from_secs(1);
+
+/// Dispatcher dependency for the `/hn_digest` command; independent of
+/// [`HnDigestConfig`] so the command works with the scheduler disabled.
+#[derive(Clone)]
+pub struct HnDigestParameters {
+    pub hn_api_base_url: Arc<str>,
+}
+
+impl Default for HnDigestParameters {
+    fn default() -> Self {
+        Self {
+            hn_api_base_url: Arc::from(DEFAULT_HN_API_BASE_URL),
+        }
+    }
+}
 
 /// The task runs until `shutdown` is cancelled; it only ends on its own by
 /// panicking, so callers should treat any earlier completion as a failure.
@@ -75,31 +95,53 @@ async fn schedule_daily<F, Fut>(
     }
 }
 
+#[derive(Debug, Error)]
+pub enum DigestError {
+    #[error("can't fetch top stories: {0}")]
+    TopStories(#[from] reqwest::Error),
+
+    #[error("no story could be summarized")]
+    NothingSummarized,
+}
+
 pub async fn run_digest(bot: &Bot, gpt: &GptParameters, config: &HnDigestConfig) {
-    let ids = match hn_api::top_story_ids(&gpt.http_client, &config.hn_api_base_url).await {
-        Ok(ids) => ids,
+    let messages = match build_digest(gpt, &config.hn_api_base_url, config.top_n).await {
+        Ok(messages) => messages,
         Err(err) => {
-            error!("HN digest: can't fetch top stories, skipping this run: {err}");
+            error!("HN digest: nothing posted this run: {err}");
             return;
         }
     };
-    let entries = collect_entries(&ids, config.top_n, config.top_n * 2, |id| {
-        summarize_story(gpt, &config.hn_api_base_url, id)
+    for &chat_id in &config.chat_ids {
+        match send_digest(bot, chat_id, None, None, &messages).await {
+            Ok(()) => info!(
+                "HN digest: posted {} stories to chat {chat_id}",
+                messages.len()
+            ),
+            Err(err) => error!("HN digest: can't post to chat {chat_id}, skipping it: {err}"),
+        }
+    }
+}
+
+/// Summarize the top `top_n` linked stories into ready-to-send HTML messages.
+pub async fn build_digest(
+    gpt: &GptParameters,
+    base_url: &str,
+    top_n: usize,
+) -> Result<Vec<String>, DigestError> {
+    let ids = hn_api::top_story_ids(&gpt.http_client, base_url).await?;
+    let entries = collect_entries(&ids, top_n, top_n * 2, |id| {
+        summarize_story(gpt, base_url, id)
     })
     .await;
     if entries.is_empty() {
-        error!("HN digest: no story could be summarized, nothing posted");
-        return;
+        return Err(DigestError::NothingSummarized);
     }
-
-    let messages: Vec<String> = entries
+    Ok(entries
         .iter()
         .enumerate()
         .map(|(index, entry)| message::format_entry(index + 1, entry))
-        .collect();
-    for &chat_id in &config.chat_ids {
-        post_to_chat(bot, chat_id, &messages).await;
-    }
+        .collect())
 }
 
 /// Firing exactly at `at` counts as done for today, so a run that finishes
@@ -171,25 +213,33 @@ async fn summarize_story(gpt: &GptParameters, base_url: &str, id: u64) -> Attemp
     }
 }
 
-async fn post_to_chat(bot: &Bot, chat_id: ChatId, messages: &[String]) {
+/// Stops at the first failed send: a chat that rejects one message (bot
+/// removed, no rights) will reject the rest too.
+async fn send_digest(
+    bot: &Bot,
+    chat_id: ChatId,
+    reply_to: Option<MessageId>,
+    thread_id: Option<ThreadId>,
+    messages: &[String],
+) -> Result<(), RequestError> {
     for (index, message) in messages.iter().enumerate() {
         // Telegram rate-limits bursts into one chat (~20 msg/min in groups).
         if index > 0 {
             tokio::time::sleep(PAUSE_BETWEEN_MESSAGES).await;
         }
-        if let Err(err) = bot
+        let mut request = bot
             .send_message(chat_id, message)
-            .parse_mode(ParseMode::Html)
-            .await
-        {
-            error!("HN digest: can't post to chat {chat_id}, skipping it: {err}");
-            return;
+            .parse_mode(ParseMode::Html);
+        if let Some(reply_to) = reply_to {
+            request = request
+                .reply_parameters(ReplyParameters::new(reply_to).allow_sending_without_reply());
         }
+        if let Some(thread_id) = thread_id {
+            request = request.message_thread_id(thread_id);
+        }
+        request.await?;
     }
-    info!(
-        "HN digest: posted {} stories to chat {chat_id}",
-        messages.len()
-    );
+    Ok(())
 }
 
 #[cfg(test)]

@@ -15,6 +15,7 @@ use testcontainers_modules::redis::Redis;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use rust_bot::hn_digest::HnDigestParameters;
 use rust_bot::{build_handler, GptParameters, MentionParameters};
 
 pub const TEST_BOT_TOKEN: &str = "test-token";
@@ -114,6 +115,12 @@ pub async fn spawn_telegram() -> (MockServer, Bot) {
     Mock::given(method("POST"))
         .and(path(format!("/bot{TEST_BOT_TOKEN}/SendSticker")))
         .respond_with(ResponseTemplate::new(200).set_body_json(default_message_response()))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("/bot{TEST_BOT_TOKEN}/SendChatAction")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true, "result": true})))
         .mount(&server)
         .await;
 
@@ -250,11 +257,35 @@ pub fn reply_message_update(
 /// Build deps, dispatch a single update through the real handler tree, and
 /// fail fast if anything stalls.
 pub async fn dispatch_one(bot: Bot, pool: PgPool, gpt_parameters: GptParameters, update: Update) {
+    dispatch_one_with_hn(
+        bot,
+        pool,
+        gpt_parameters,
+        HnDigestParameters::default(),
+        update,
+    )
+    .await;
+}
+
+pub async fn dispatch_one_with_hn(
+    bot: Bot,
+    pool: PgPool,
+    gpt_parameters: GptParameters,
+    hn_digest_parameters: HnDigestParameters,
+    update: Update,
+) {
     use std::ops::ControlFlow;
 
     let handler = build_handler();
     let mention_parameters = MentionParameters::default();
-    let deps = dptree::deps![update, bot, mention_parameters, pool, gpt_parameters];
+    let deps = dptree::deps![
+        update,
+        bot,
+        mention_parameters,
+        pool,
+        gpt_parameters,
+        hn_digest_parameters
+    ];
     let outcome = tokio::time::timeout(Duration::from_secs(15), handler.dispatch(deps))
         .await
         .expect("dispatcher did not complete within 15s");

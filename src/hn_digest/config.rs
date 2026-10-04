@@ -3,8 +3,8 @@ use log::warn;
 use teloxide::types::ChatId;
 
 pub const DEFAULT_HN_API_BASE_URL: &str = "https://hacker-news.firebaseio.com/v0";
-const DEFAULT_TOP_N: usize = 3;
-const MAX_TOP_N: usize = 10;
+pub(crate) const DEFAULT_TOP_N: usize = 3;
+pub(crate) const MAX_TOP_N: usize = 10;
 const DEFAULT_HOUR_UTC: u32 = 17;
 
 #[derive(Debug, Clone)]
