@@ -18,7 +18,7 @@ async fn url_summary_fetches_article_summarizes_and_replies() {
     let html = format!("<html><body><p>{long_text}</p></body></html>");
     Mock::given(method("GET"))
         .and(path("/post/42"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(html))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(html, "text/html; charset=utf-8"))
         .mount(&article)
         .await;
 
@@ -88,5 +88,91 @@ async fn url_summary_unreachable_source_does_not_reply() {
     assert_eq!(
         send_count, 0,
         "no reply should be sent when the article source is unreachable"
+    );
+}
+
+async fn spawn_article(template: ResponseTemplate) -> (MockServer, String) {
+    let article = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/post/42"))
+        .respond_with(template)
+        .mount(&article)
+        .await;
+    let url = format!("{}/post/42", article.uri());
+    (article, url)
+}
+
+async fn send_message_bodies(telegram: &MockServer) -> Vec<String> {
+    telegram
+        .received_requests()
+        .await
+        .expect("collect telegram requests")
+        .iter()
+        .filter(|r| r.url.path().ends_with("/SendMessage"))
+        .map(|r| String::from_utf8_lossy(&r.body).to_string())
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn url_summary_llm_failure_replies_with_busy_fallback() {
+    let pg = spawn_postgres().await;
+    let redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (openai, openai_url) = spawn_openai_failing().await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+
+    let html = format!(
+        "<html><body><p>{}</p></body></html>",
+        "lorem ipsum dolor sit amet ".repeat(80)
+    );
+    let (_article, article_url) =
+        spawn_article(ResponseTemplate::new(200).set_body_raw(html, "text/html")).await;
+
+    let update = text_message_update(&format!("посмотри {article_url}"), -1005000, 33, 1);
+    dispatch_one(bot, pg.pool.clone(), gpt, update).await;
+
+    let openai_calls = openai
+        .received_requests()
+        .await
+        .expect("collect openai requests");
+    assert_eq!(openai_calls.len(), 1, "expected 1 openai call");
+
+    let bodies = send_message_bodies(&telegram).await;
+    assert_eq!(bodies.len(), 1, "expected 1 sendMessage call: {bodies:?}");
+    assert!(
+        bodies[0].contains("TLDR"),
+        "sendMessage body: {}",
+        bodies[0]
+    );
+    assert!(
+        bodies[0].contains("Братан"),
+        "sendMessage body: {}",
+        bodies[0]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn url_summary_non_html_source_is_skipped() {
+    let pg = spawn_postgres().await;
+    let redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (openai, openai_url) = spawn_openai("unused").await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+
+    let pdf_like = "%PDF-1.7 ".repeat(200);
+    let (_article, article_url) =
+        spawn_article(ResponseTemplate::new(200).set_body_raw(pdf_like, "application/pdf")).await;
+
+    let update = text_message_update(&format!("посмотри {article_url}"), -1006000, 44, 1);
+    dispatch_one(bot, pg.pool.clone(), gpt, update).await;
+
+    let openai_calls = openai
+        .received_requests()
+        .await
+        .expect("collect openai requests");
+    assert!(openai_calls.is_empty(), "non-HTML must not reach the LLM");
+    assert!(
+        send_message_bodies(&telegram).await.is_empty(),
+        "no reply should be sent for non-HTML sources"
     );
 }
