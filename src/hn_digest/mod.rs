@@ -16,10 +16,18 @@ use std::time::Duration;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 const PAUSE_BETWEEN_MESSAGES: Duration = Duration::from_secs(1);
 
-pub fn spawn_scheduler(bot: Bot, gpt: GptParameters, config: HnDigestConfig) -> JoinHandle<()> {
+/// The task runs until `shutdown` is cancelled; it only ends on its own by
+/// panicking, so callers should treat any earlier completion as a failure.
+pub fn spawn_scheduler(
+    bot: Bot,
+    gpt: GptParameters,
+    config: HnDigestConfig,
+    shutdown: CancellationToken,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         info!(
             "HN digest enabled: top {} daily at {} UTC to {} chat(s)",
@@ -27,17 +35,44 @@ pub fn spawn_scheduler(bot: Bot, gpt: GptParameters, config: HnDigestConfig) -> 
             config.time_utc,
             config.chat_ids.len()
         );
-        if config.run_on_startup {
-            run_digest(&bot, &gpt, &config).await;
-        }
-        loop {
-            let now = Utc::now();
-            let next = next_run_after(now, config.time_utc);
-            info!("Next HN digest at {next}");
-            tokio::time::sleep((next - now).to_std().unwrap_or_default()).await;
-            run_digest(&bot, &gpt, &config).await;
-        }
+        schedule_daily(config.time_utc, config.run_on_startup, &shutdown, || {
+            run_digest(&bot, &gpt, &config)
+        })
+        .await;
+        info!("HN digest scheduler stopped");
     })
+}
+
+/// Cancellation also drops an in-flight run, so a shutdown mid-digest may
+/// leave some chats with a partial digest; nothing is retried.
+async fn schedule_daily<F, Fut>(
+    at: NaiveTime,
+    run_immediately: bool,
+    shutdown: &CancellationToken,
+    mut run: F,
+) where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = ()>,
+{
+    if run_immediately && shutdown.run_until_cancelled(run()).await.is_none() {
+        return;
+    }
+    loop {
+        let now = Utc::now();
+        let next = next_run_after(now, at);
+        info!("Next HN digest at {next}");
+        let delay = (next - now).to_std().unwrap_or_default();
+        if shutdown
+            .run_until_cancelled(tokio::time::sleep(delay))
+            .await
+            .is_none()
+        {
+            return;
+        }
+        if shutdown.run_until_cancelled(run()).await.is_none() {
+            return;
+        }
+    }
 }
 
 pub async fn run_digest(bot: &Bot, gpt: &GptParameters, config: &HnDigestConfig) {
@@ -162,6 +197,9 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration as StdDuration;
 
     fn utc(h: u32, m: u32, s: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 10, 4, h, m, s).unwrap()
@@ -230,6 +268,83 @@ mod tests {
         let (entries, visited) = run_collect(&(1..=10).collect::<Vec<_>>(), 2, &outcomes).await;
         assert!(entries.is_empty());
         assert_eq!(visited, vec![1, 2, 3, 4]);
+    }
+
+    fn hours_from_now(hours: i64) -> NaiveTime {
+        (Utc::now() + chrono::Duration::hours(hours)).time()
+    }
+
+    fn counting_run(
+        runs: &Arc<AtomicUsize>,
+        never_finishes: bool,
+    ) -> impl FnMut() -> std::pin::Pin<Box<dyn Future<Output = ()> + Send>> {
+        let runs = runs.clone();
+        move || {
+            let runs = runs.clone();
+            Box::pin(async move {
+                runs.fetch_add(1, Ordering::SeqCst);
+                if never_finishes {
+                    std::future::pending::<()>().await;
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn schedule_stops_when_cancelled_while_waiting() {
+        let shutdown = CancellationToken::new();
+        let runs = Arc::new(AtomicUsize::new(0));
+        let task = tokio::spawn({
+            let shutdown = shutdown.clone();
+            let run = counting_run(&runs, false);
+            async move { schedule_daily(hours_from_now(6), false, &shutdown, run).await }
+        });
+
+        tokio::time::sleep(StdDuration::from_millis(20)).await;
+        shutdown.cancel();
+
+        tokio::time::timeout(StdDuration::from_secs(1), task)
+            .await
+            .expect("scheduler must stop promptly")
+            .unwrap();
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn schedule_stops_when_cancelled_mid_run() {
+        let shutdown = CancellationToken::new();
+        let runs = Arc::new(AtomicUsize::new(0));
+        let task = tokio::spawn({
+            let shutdown = shutdown.clone();
+            let run = counting_run(&runs, true);
+            async move { schedule_daily(hours_from_now(6), true, &shutdown, run).await }
+        });
+
+        tokio::time::sleep(StdDuration::from_millis(20)).await;
+        shutdown.cancel();
+
+        tokio::time::timeout(StdDuration::from_secs(1), task)
+            .await
+            .expect("scheduler must stop promptly")
+            .unwrap();
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn cancelled_schedule_never_runs() {
+        let shutdown = CancellationToken::new();
+        shutdown.cancel();
+        let runs = Arc::new(AtomicUsize::new(0));
+
+        schedule_daily(
+            hours_from_now(6),
+            true,
+            &shutdown,
+            counting_run(&runs, false),
+        )
+        .await;
+
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

@@ -4,10 +4,11 @@ use std::env;
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::info;
+use log::{error, info, warn};
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use teloxide::prelude::*;
+use tokio_util::sync::CancellationToken;
 
 use rust_bot::hn_digest::{self, HnDigestConfig};
 use rust_bot::{AppDeps, GptParameters, MentionParameters, DEFAULT_OPENAI_BASE_URL};
@@ -36,12 +37,19 @@ async fn main() -> anyhow::Result<()> {
         redis_connection_manager,
     };
 
-    match HnDigestConfig::from_env() {
-        Some(config) => {
-            hn_digest::spawn_scheduler(bot.clone(), gpt_parameters.clone(), config);
+    let shutdown = CancellationToken::new();
+    let hn_digest_task = match HnDigestConfig::from_env() {
+        Some(config) => Some(hn_digest::spawn_scheduler(
+            bot.clone(),
+            gpt_parameters.clone(),
+            config,
+            shutdown.clone(),
+        )),
+        None => {
+            info!("HN digest disabled: HN_DIGEST_CHAT_IDS is not set");
+            None
         }
-        None => info!("HN digest disabled: HN_DIGEST_CHAT_IDS is not set"),
-    }
+    };
 
     let deps = AppDeps {
         bot,
@@ -50,7 +58,28 @@ async fn main() -> anyhow::Result<()> {
         mention_parameters: MentionParameters::default(),
     };
 
-    rust_bot::run(deps).await
+    let bot_run = rust_bot::run(deps);
+    let Some(mut hn_digest_task) = hn_digest_task else {
+        return bot_run.await;
+    };
+    tokio::pin!(bot_run);
+    tokio::select! {
+        result = &mut bot_run => {
+            shutdown.cancel();
+            if let Err(err) = hn_digest_task.await {
+                error!("HN digest scheduler failed: {err}");
+            }
+            result
+        }
+        joined = &mut hn_digest_task => {
+            // The scheduler only ends early by panicking; keep serving chats.
+            match joined {
+                Err(err) => error!("HN digest scheduler crashed, no digests until restart: {err}"),
+                Ok(()) => warn!("HN digest scheduler exited unexpectedly"),
+            }
+            bot_run.await
+        }
+    }
 }
 
 async fn establish_connection() -> anyhow::Result<PgPool> {
