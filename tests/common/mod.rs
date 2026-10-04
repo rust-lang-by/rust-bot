@@ -279,6 +279,7 @@ pub async fn dispatch_one_with_hn(
 
     let handler = build_handler();
     let mention_parameters = MentionParameters::default();
+    let command_tasks = hn_digest_parameters.command_tasks.clone();
     let deps = dptree::deps![
         update,
         bot,
@@ -295,6 +296,13 @@ pub async fn dispatch_one_with_hn(
         matches!(outcome, ControlFlow::Break(Ok(()))),
         "dispatcher did not route to a handler: outcome={outcome:?}"
     );
+
+    // `/hn` builds its digest in a background task; let it finish before the
+    // test inspects the mocks.
+    command_tasks.close();
+    tokio::time::timeout(Duration::from_secs(15), command_tasks.wait())
+        .await
+        .expect("background command tasks did not finish within 15s");
 }
 
 /// The real dispatcher inserts `Me` from `getMe` on start; command routing
@@ -309,7 +317,7 @@ fn bot_me() -> Me {
         "can_read_all_group_messages": true,
         "supports_inline_queries": false
     });
-    serde_json::from_str(&me.to_string()).expect("build Me")
+    serde_json::from_value(me).expect("build Me")
 }
 
 fn default_message_response() -> Value {

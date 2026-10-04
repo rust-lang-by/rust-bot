@@ -22,31 +22,68 @@ use teloxide::RequestError;
 use thiserror::Error;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
 const PAUSE_BETWEEN_MESSAGES: Duration = Duration::from_secs(1);
 
-/// Dispatcher dependency for the `/hn` command; independent of
-/// [`HnDigestConfig`] so the command works with the scheduler disabled.
+/// Shared by the daily scheduler and the `/hn` command (as a dispatcher
+/// dependency), independent of [`HnDigestConfig`] so the command works with
+/// the scheduler disabled.
 #[derive(Clone)]
 pub struct HnDigestParameters {
     pub hn_api_base_url: Arc<str>,
+    /// Stops the scheduler and in-flight `/hn` digests.
+    pub shutdown: CancellationToken,
+    /// `/hn` digests run here, off the dispatcher; close and wait it on
+    /// shutdown.
+    pub command_tasks: TaskTracker,
 }
 
 impl Default for HnDigestParameters {
     fn default() -> Self {
         Self {
             hn_api_base_url: Arc::from(DEFAULT_HN_API_BASE_URL),
+            shutdown: CancellationToken::new(),
+            command_tasks: TaskTracker::new(),
         }
     }
 }
 
-/// The task runs until `shutdown` is cancelled; it only ends on its own by
-/// panicking, so callers should treat any earlier completion as a failure.
+/// Where a batch of messages goes: a plain post to a chat, or a reply to a
+/// message (kept in its forum thread).
+#[derive(Debug, Clone, Copy)]
+pub struct ReplyTarget {
+    pub chat_id: ChatId,
+    pub reply_to: Option<MessageId>,
+    pub thread_id: Option<ThreadId>,
+}
+
+impl ReplyTarget {
+    pub fn chat(chat_id: ChatId) -> Self {
+        Self {
+            chat_id,
+            reply_to: None,
+            thread_id: None,
+        }
+    }
+
+    pub fn reply_to(msg: &Message) -> Self {
+        Self {
+            chat_id: msg.chat.id,
+            reply_to: Some(msg.id),
+            thread_id: msg.thread_id,
+        }
+    }
+}
+
+/// The task runs until `parameters.shutdown` is cancelled; it only ends on its
+/// own by panicking, so callers should treat any earlier completion as a
+/// failure.
 pub fn spawn_scheduler(
     bot: Bot,
     gpt: GptParameters,
+    parameters: HnDigestParameters,
     config: HnDigestConfig,
-    shutdown: CancellationToken,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         info!(
@@ -55,9 +92,12 @@ pub fn spawn_scheduler(
             config.time_utc,
             config.chat_ids.len()
         );
-        schedule_daily(config.time_utc, config.run_on_startup, &shutdown, || {
-            run_digest(&bot, &gpt, &config)
-        })
+        schedule_daily(
+            config.time_utc,
+            config.run_on_startup,
+            &parameters.shutdown,
+            || run_digest(&bot, &gpt, &parameters, &config),
+        )
         .await;
         info!("HN digest scheduler stopped");
     })
@@ -104,8 +144,13 @@ pub enum DigestError {
     NothingSummarized,
 }
 
-pub async fn run_digest(bot: &Bot, gpt: &GptParameters, config: &HnDigestConfig) {
-    let messages = match build_digest(gpt, &config.hn_api_base_url, config.top_n).await {
+pub async fn run_digest(
+    bot: &Bot,
+    gpt: &GptParameters,
+    parameters: &HnDigestParameters,
+    config: &HnDigestConfig,
+) {
+    let messages = match build_digest(gpt, &parameters.hn_api_base_url, config.top_n).await {
         Ok(messages) => messages,
         Err(err) => {
             error!("HN digest: nothing posted this run: {err}");
@@ -113,7 +158,7 @@ pub async fn run_digest(bot: &Bot, gpt: &GptParameters, config: &HnDigestConfig)
         }
     };
     for &chat_id in &config.chat_ids {
-        match send_digest(bot, chat_id, None, None, &messages).await {
+        match send_html_messages(bot, ReplyTarget::chat(chat_id), &messages).await {
             Ok(()) => info!(
                 "HN digest: posted {} stories to chat {chat_id}",
                 messages.len()
@@ -215,11 +260,9 @@ async fn summarize_story(gpt: &GptParameters, base_url: &str, id: u64) -> Attemp
 
 /// Stops at the first failed send: a chat that rejects one message (bot
 /// removed, no rights) will reject the rest too.
-async fn send_digest(
+async fn send_html_messages(
     bot: &Bot,
-    chat_id: ChatId,
-    reply_to: Option<MessageId>,
-    thread_id: Option<ThreadId>,
+    target: ReplyTarget,
     messages: &[String],
 ) -> Result<(), RequestError> {
     for (index, message) in messages.iter().enumerate() {
@@ -228,13 +271,13 @@ async fn send_digest(
             tokio::time::sleep(PAUSE_BETWEEN_MESSAGES).await;
         }
         let mut request = bot
-            .send_message(chat_id, message)
+            .send_message(target.chat_id, message)
             .parse_mode(ParseMode::Html);
-        if let Some(reply_to) = reply_to {
+        if let Some(reply_to) = target.reply_to {
             request = request
                 .reply_parameters(ReplyParameters::new(reply_to).allow_sending_without_reply());
         }
-        if let Some(thread_id) = thread_id {
+        if let Some(thread_id) = target.thread_id {
             request = request.message_thread_id(thread_id);
         }
         request.await?;

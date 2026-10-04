@@ -80,10 +80,9 @@ async fn hn_digest_summarizes_once_and_posts_to_every_chat() {
         time_utc: NaiveTime::MIN,
         top_n: 2,
         run_on_startup: false,
-        hn_api_base_url: format!("{}/v0", hn.uri()),
     };
 
-    run_digest(&bot, &gpt, &config).await;
+    run_digest(&bot, &gpt, &hn_parameters(&hn), &config).await;
 
     let openai_calls = openai
         .received_requests()
@@ -153,10 +152,9 @@ async fn hn_digest_posts_nothing_when_top_stories_unavailable() {
         time_utc: NaiveTime::MIN,
         top_n: 3,
         run_on_startup: false,
-        hn_api_base_url: format!("{}/v0", hn.uri()),
     };
 
-    run_digest(&bot, &gpt, &config).await;
+    run_digest(&bot, &gpt, &hn_parameters(&hn), &config).await;
 
     assert!(openai
         .received_requests()
@@ -187,6 +185,7 @@ async fn sent_messages(telegram: &MockServer) -> Vec<Value> {
 fn hn_parameters(hn: &MockServer) -> HnDigestParameters {
     HnDigestParameters {
         hn_api_base_url: Arc::from(format!("{}/v0", hn.uri())),
+        ..HnDigestParameters::default()
     }
 }
 
@@ -210,6 +209,15 @@ async fn hn_digest_command_replies_with_three_stories_by_default() {
         .await
         .expect("collect openai requests");
     assert_eq!(openai_calls.len(), 3, "one summary per story");
+
+    let typing_count = telegram
+        .received_requests()
+        .await
+        .expect("collect telegram requests")
+        .iter()
+        .filter(|r| r.url.path().ends_with("/SendChatAction"))
+        .count();
+    assert!(typing_count >= 1, "typing action shown while building");
 
     let sent = sent_messages(&telegram).await;
     assert_eq!(sent.len(), 3, "{sent:#?}");
@@ -321,4 +329,46 @@ async fn hn_digest_command_for_another_bot_is_ignored() {
     );
     let sent = sent_messages(&telegram).await;
     assert!(sent.is_empty(), "{sent:#?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hn_digest_command_has_per_chat_cooldown() {
+    let pg = spawn_postgres().await;
+    let redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (_openai, openai_url) = spawn_openai("- summary").await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+    let articles = spawn_articles().await;
+    let hn = spawn_hn(&articles).await;
+    let chat_id = -1008006_i64;
+
+    // A usage hint must not consume the cooldown; the first real run does.
+    for (message_id, text) in [(10, "/hn 42"), (11, "/hn 1"), (12, "/hn 1")] {
+        let update = text_message_update(text, chat_id, 60, message_id);
+        dispatch_one_with_hn(
+            bot.clone(),
+            pg.pool.clone(),
+            gpt.clone(),
+            hn_parameters(&hn),
+            update,
+        )
+        .await;
+    }
+
+    let top_stories_calls = hn
+        .received_requests()
+        .await
+        .expect("collect hn requests")
+        .iter()
+        .filter(|r| r.url.path() == "/v0/topstories.json")
+        .count();
+    assert_eq!(top_stories_calls, 1, "only the first run hits HN");
+
+    let sent = sent_messages(&telegram).await;
+    let texts: Vec<&str> = sent.iter().filter_map(|b| b["text"].as_str()).collect();
+    assert_eq!(texts.len(), 3, "{texts:#?}");
+    assert!(texts[0].contains("/hn [1-10]"), "{}", texts[0]);
+    assert!(texts[1].starts_with("#1 "), "{}", texts[1]);
+    assert!(texts[2].contains("раз в 10 минут"), "{}", texts[2]);
+    assert_eq!(sent[2]["reply_parameters"]["message_id"], json!(12));
 }
