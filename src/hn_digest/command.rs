@@ -10,8 +10,13 @@ use teloxide::types::ChatAction;
 use teloxide::utils::command::BotCommands;
 
 const FAILURE_REPLY: &str = "Не получилось собрать HN дайджест, попробуй позже.";
+const BUSY_REPLY: &str = "Сейчас уже собираются другие HN дайджесты, попробуй через пару минут.";
 /// Per chat; bounds how often members can trigger 2×N fetch + LLM calls.
 const COOLDOWN: Duration = Duration::from_secs(10 * 60);
+/// Caps one digest build. Kept below [`COOLDOWN`] so the cooldown key is
+/// still held for the whole run and acts as a per-chat in-flight lock.
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const _: () = assert!(COMMAND_TIMEOUT.as_secs() < COOLDOWN.as_secs());
 /// Telegram shows a chat action for ~5s, so it is re-sent while the digest
 /// is being built.
 const TYPING_REFRESH: Duration = Duration::from_secs(4);
@@ -60,15 +65,37 @@ pub async fn handle_command(
         send_html_messages(&bot, target, &[usage_reply()]).await?;
         return Ok(());
     };
-    if !claim_cooldown(gpt_parameters, target.chat_id).await {
-        send_html_messages(&bot, target, &[cooldown_reply()]).await?;
+    // Taken before the cooldown so a busy bot doesn't burn the chat's turn.
+    let Ok(slot) = hn_digest_parameters
+        .command_slots
+        .clone()
+        .try_acquire_owned()
+    else {
+        send_html_messages(&bot, target, &[BUSY_REPLY.to_owned()]).await?;
         return Ok(());
+    };
+    match claim_cooldown(gpt_parameters, target.chat_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            send_html_messages(&bot, target, &[cooldown_reply()]).await?;
+            return Ok(());
+        }
+        // Fail closed: without the cooldown nothing bounds per-chat cost.
+        Err(err) => {
+            warn!(
+                "HN digest cooldown check failed for chat_id {}: {err}",
+                target.chat_id
+            );
+            send_html_messages(&bot, target, &[FAILURE_REPLY.to_owned()]).await?;
+            return Ok(());
+        }
     }
     info!("HN digest command: chat_id {}, top {top_n}", target.chat_id);
 
     let gpt = gpt_parameters.clone();
     let parameters = hn_digest_parameters.clone();
     hn_digest_parameters.command_tasks.spawn(async move {
+        let _slot = slot;
         let run = run_command(&bot, &gpt, &parameters, target, top_n);
         if parameters.shutdown.run_until_cancelled(run).await.is_none() {
             info!(
@@ -80,17 +107,16 @@ pub async fn handle_command(
     Ok(())
 }
 
-/// The `NX` key doubles as an in-flight lock, so one chat never builds two
-/// digests at once. Fails open: a Redis outage must not disable the command.
-async fn claim_cooldown(gpt_parameters: &GptParameters, chat_id: ChatId) -> bool {
+/// `Ok(false)` while the chat is cooling down. The `NX` key doubles as an
+/// in-flight lock (see [`COMMAND_TIMEOUT`]), so one chat never builds two
+/// digests at once.
+async fn claim_cooldown(
+    gpt_parameters: &GptParameters,
+    chat_id: ChatId,
+) -> redis::RedisResult<bool> {
     let mut redis = gpt_parameters.redis_connection_manager.clone();
     let key = format!("hn_digest:cooldown:{chat_id}");
-    chat_repository::set_if_absent(&mut redis, &key, COOLDOWN)
-        .await
-        .unwrap_or_else(|err| {
-            warn!("HN digest cooldown check failed for chat_id {chat_id}, allowing: {err}");
-            true
-        })
+    chat_repository::set_if_absent(&mut redis, &key, COOLDOWN).await
 }
 
 /// Runs off the dispatcher, so errors are logged here rather than returned.
@@ -101,12 +127,22 @@ async fn run_command(
     target: ReplyTarget,
     top_n: usize,
 ) {
-    let digest = build_digest(gpt, &parameters.hn_api_base_url, top_n);
+    let digest = tokio::time::timeout(
+        COMMAND_TIMEOUT,
+        build_digest(gpt, &parameters.hn_api_base_url, top_n),
+    );
     let messages = match with_typing(bot, target, digest).await {
-        Ok(messages) => messages,
-        Err(err) => {
+        Ok(Ok(messages)) => messages,
+        Ok(Err(err)) => {
             warn!(
                 "HN digest command failed for chat_id {}: {err}",
+                target.chat_id
+            );
+            vec![FAILURE_REPLY.to_owned()]
+        }
+        Err(_) => {
+            warn!(
+                "HN digest command timed out for chat_id {} after {COMMAND_TIMEOUT:?}",
                 target.chat_id
             );
             vec![FAILURE_REPLY.to_owned()]
@@ -212,7 +248,12 @@ mod tests {
 
     #[test]
     fn replies_are_html_safe() {
-        for reply in [usage_reply(), cooldown_reply(), FAILURE_REPLY.to_owned()] {
+        for reply in [
+            usage_reply(),
+            cooldown_reply(),
+            FAILURE_REPLY.to_owned(),
+            BUSY_REPLY.to_owned(),
+        ] {
             assert!(!reply.contains(['<', '>', '&']), "{reply}");
         }
     }

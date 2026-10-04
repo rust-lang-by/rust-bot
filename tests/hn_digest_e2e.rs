@@ -6,6 +6,7 @@ use rust_bot::hn_digest::{run_digest, HnDigestConfig, HnDigestParameters};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use teloxide::types::ChatId;
+use tokio::sync::Semaphore;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -371,4 +372,39 @@ async fn hn_digest_command_has_per_chat_cooldown() {
     assert!(texts[1].starts_with("#1 "), "{}", texts[1]);
     assert!(texts[2].contains("раз в 10 минут"), "{}", texts[2]);
     assert_eq!(sent[2]["reply_parameters"]["message_id"], json!(12));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hn_digest_command_is_refused_when_all_slots_are_busy() {
+    let pg = spawn_postgres().await;
+    let mut redis = spawn_redis().await;
+    let (telegram, bot) = spawn_telegram().await;
+    let (_openai, openai_url) = spawn_openai("unused").await;
+    let gpt = gpt_parameters(redis.connection_manager.clone(), openai_url);
+    let hn = MockServer::start().await;
+    let chat_id = -1008007_i64;
+    let parameters = HnDigestParameters {
+        command_slots: Arc::new(Semaphore::new(0)),
+        ..hn_parameters(&hn)
+    };
+
+    let update = text_message_update("/hn", chat_id, 61, 13);
+    dispatch_one_with_hn(bot, pg.pool.clone(), gpt, parameters, update).await;
+
+    let hn_calls = hn.received_requests().await.expect("collect hn requests");
+    assert!(hn_calls.is_empty(), "busy bot must not hit HN");
+    let cooldown: Option<String> = redis::AsyncCommands::get(
+        &mut redis.connection_manager,
+        format!("hn_digest:cooldown:{chat_id}"),
+    )
+    .await
+    .expect("read cooldown key");
+    assert!(
+        cooldown.is_none(),
+        "busy reply must not consume the cooldown"
+    );
+    let sent = sent_messages(&telegram).await;
+    assert_eq!(sent.len(), 1, "{sent:#?}");
+    let text = sent[0]["text"].as_str().expect("text");
+    assert!(text.contains("попробуй через пару минут"), "{text}");
 }

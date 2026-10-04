@@ -20,11 +20,15 @@ use teloxide::prelude::*;
 use teloxide::types::{MessageId, ParseMode, ReplyParameters, ThreadId};
 use teloxide::RequestError;
 use thiserror::Error;
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 const PAUSE_BETWEEN_MESSAGES: Duration = Duration::from_secs(1);
+/// Bot-wide cap on `/hn` digests built at once; per-chat cooldowns alone do
+/// not bound the total when the bot sits in many chats.
+pub const MAX_CONCURRENT_COMMANDS: usize = 2;
 
 /// Shared by the daily scheduler and the `/hn` command (as a dispatcher
 /// dependency), independent of [`HnDigestConfig`] so the command works with
@@ -37,6 +41,8 @@ pub struct HnDigestParameters {
     /// `/hn` digests run here, off the dispatcher; close and wait it on
     /// shutdown.
     pub command_tasks: TaskTracker,
+    /// One permit per running `/hn` digest.
+    pub command_slots: Arc<Semaphore>,
 }
 
 impl Default for HnDigestParameters {
@@ -45,6 +51,7 @@ impl Default for HnDigestParameters {
             hn_api_base_url: Arc::from(DEFAULT_HN_API_BASE_URL),
             shutdown: CancellationToken::new(),
             command_tasks: TaskTracker::new(),
+            command_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_COMMANDS)),
         }
     }
 }
