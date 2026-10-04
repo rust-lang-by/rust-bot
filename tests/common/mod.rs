@@ -7,7 +7,7 @@ use redis::aio::ConnectionManager;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use teloxide::prelude::*;
-use teloxide::types::Update;
+use teloxide::types::{Me, Update};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
 use testcontainers_modules::postgres::Postgres;
@@ -15,9 +15,11 @@ use testcontainers_modules::redis::Redis;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+use rust_bot::hn_digest::HnDigestParameters;
 use rust_bot::{build_handler, GptParameters, MentionParameters};
 
 pub const TEST_BOT_TOKEN: &str = "test-token";
+pub const TEST_BOT_USERNAME: &str = "rust_by_bot";
 
 pub struct PostgresHarness {
     pub _container: ContainerAsync<Postgres>,
@@ -114,6 +116,12 @@ pub async fn spawn_telegram() -> (MockServer, Bot) {
     Mock::given(method("POST"))
         .and(path(format!("/bot{TEST_BOT_TOKEN}/SendSticker")))
         .respond_with(ResponseTemplate::new(200).set_body_json(default_message_response()))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path(format!("/bot{TEST_BOT_TOKEN}/SendChatAction")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true, "result": true})))
         .mount(&server)
         .await;
 
@@ -250,11 +258,37 @@ pub fn reply_message_update(
 /// Build deps, dispatch a single update through the real handler tree, and
 /// fail fast if anything stalls.
 pub async fn dispatch_one(bot: Bot, pool: PgPool, gpt_parameters: GptParameters, update: Update) {
+    dispatch_one_with_hn(
+        bot,
+        pool,
+        gpt_parameters,
+        HnDigestParameters::default(),
+        update,
+    )
+    .await;
+}
+
+pub async fn dispatch_one_with_hn(
+    bot: Bot,
+    pool: PgPool,
+    gpt_parameters: GptParameters,
+    hn_digest_parameters: HnDigestParameters,
+    update: Update,
+) {
     use std::ops::ControlFlow;
 
     let handler = build_handler();
     let mention_parameters = MentionParameters::default();
-    let deps = dptree::deps![update, bot, mention_parameters, pool, gpt_parameters];
+    let command_tasks = hn_digest_parameters.command_tasks.clone();
+    let deps = dptree::deps![
+        update,
+        bot,
+        mention_parameters,
+        pool,
+        gpt_parameters,
+        hn_digest_parameters,
+        bot_me()
+    ];
     let outcome = tokio::time::timeout(Duration::from_secs(15), handler.dispatch(deps))
         .await
         .expect("dispatcher did not complete within 15s");
@@ -262,6 +296,28 @@ pub async fn dispatch_one(bot: Bot, pool: PgPool, gpt_parameters: GptParameters,
         matches!(outcome, ControlFlow::Break(Ok(()))),
         "dispatcher did not route to a handler: outcome={outcome:?}"
     );
+
+    // `/hn` builds its digest in a background task; let it finish before the
+    // test inspects the mocks.
+    command_tasks.close();
+    tokio::time::timeout(Duration::from_secs(15), command_tasks.wait())
+        .await
+        .expect("background command tasks did not finish within 15s");
+}
+
+/// The real dispatcher inserts `Me` from `getMe` on start; command routing
+/// (`filter_command`) needs it to tell `/hn@this_bot` from `/hn@other_bot`.
+fn bot_me() -> Me {
+    let me = json!({
+        "id": 1,
+        "is_bot": true,
+        "first_name": "TestBot",
+        "username": TEST_BOT_USERNAME,
+        "can_join_groups": true,
+        "can_read_all_group_messages": true,
+        "supports_inline_queries": false
+    });
+    serde_json::from_value(me).expect("build Me")
 }
 
 fn default_message_response() -> Value {

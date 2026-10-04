@@ -15,6 +15,7 @@ use teloxide::types::MessageKind::Common;
 use teloxide::types::{MediaText, MessageCommon};
 use teloxide::RequestError;
 
+use crate::hn_digest::{self, HnDigestParameters};
 use crate::{
     bf_mention_handler, chat_gpt_handler, gayness_handler, rust_mention_handler,
     url_summary_handler, AppError,
@@ -98,86 +99,119 @@ pub struct AppDeps {
     pub db_pool: PgPool,
     pub gpt_parameters: GptParameters,
     pub mention_parameters: MentionParameters,
+    pub hn_digest_parameters: HnDigestParameters,
 }
 
+// Every handler returns `Result<(), AppError>`; errors are logged once here at
+// the dispatcher boundary and swallowed so a single bad update never tears down
+// the dispatcher.
+fn log_outcome(outcome: Result<(), AppError>) -> ResponseResult<()> {
+    if let Err(err) = outcome {
+        error!("message handler failed: {err}");
+    }
+    respond(())
+}
+
+/// Needs `Me` among the dependencies (the dispatcher adds it on start) so
+/// `/hn@other_bot` is left to the other bot.
 pub fn build_handler() -> UpdateHandler<RequestError> {
     Update::filter_message().branch(
-        dptree::filter(|msg: Message| !msg.chat.is_private()).endpoint(
-            |msg: Message,
-             mention_parameters: MentionParameters,
-             db_pool: Pool<Postgres>,
-             gpt_parameters: GptParameters,
-             bot: Bot| async move {
-                // Every handler returns `Result<(), AppError>`; errors are
-                // logged once here at the dispatcher boundary and swallowed so
-                // a single bad update never tears down the dispatcher.
-                let outcome: Result<(), AppError> = if let Common(MessageCommon {
-                    media_kind: Text(media_text),
-                    ..
-                }) = &msg.kind
-                {
-                    match &media_text.text {
-                        text if mention_parameters.chat_gpt_regex.is_match(text) => {
-                            chat_gpt_handler::handle_chat_gpt_question(bot, msg, &gpt_parameters)
-                                .await
-                        }
-                        text if message_has_url(
-                            &mention_parameters.url_regex,
-                            text,
-                            media_text,
-                        ) =>
-                        {
-                            url_summary_handler::handle_url_summary(
-                                bot,
-                                msg,
-                                mention_parameters.url_regex.clone(),
-                                &gpt_parameters,
+        dptree::filter(|msg: Message| !msg.chat.is_private())
+            .branch(
+                dptree::entry()
+                    .filter_command::<hn_digest::Command>()
+                    .endpoint(
+                        |msg: Message,
+                         command: hn_digest::Command,
+                         gpt_parameters: GptParameters,
+                         hn_digest_parameters: HnDigestParameters,
+                         bot: Bot| async move {
+                            log_outcome(
+                                hn_digest::handle_command(
+                                    bot,
+                                    msg,
+                                    command,
+                                    &gpt_parameters,
+                                    &hn_digest_parameters,
+                                )
+                                .await,
                             )
-                            .await
-                        }
-                        text if mention_parameters.rust_regex.is_match(text) => {
-                            rust_mention_handler::handle_rust_matched_mention(
-                                bot,
-                                msg,
-                                db_pool,
-                                mention_parameters.req_time_diff,
-                                mention_parameters.rust_chat_id,
-                            )
-                            .await
-                        }
-                        text if mention_parameters.blazing_fast_regex.is_match(text) => {
-                            bf_mention_handler::handle_bf_matched_mention(bot, msg).await;
-                            Ok(())
-                        }
-                        text if mention_parameters.gayness_regex.is_match(text) => {
-                            gayness_handler::handle_gayness_mention(bot, msg).await;
-                            Ok(())
-                        }
-                        _ => {
-                            if let Some(reply_msg) = &msg.reply_to_message() {
-                                chat_gpt_handler::handle_reply(
-                                    &bot,
-                                    &msg,
-                                    reply_msg,
+                        },
+                    ),
+            )
+            .branch(dptree::endpoint(
+                |msg: Message,
+                 mention_parameters: MentionParameters,
+                 db_pool: Pool<Postgres>,
+                 gpt_parameters: GptParameters,
+                 bot: Bot| async move {
+                    let outcome: Result<(), AppError> = if let Common(MessageCommon {
+                        media_kind: Text(media_text),
+                        ..
+                    }) = &msg.kind
+                    {
+                        match &media_text.text {
+                            text if mention_parameters.chat_gpt_regex.is_match(text) => {
+                                chat_gpt_handler::handle_chat_gpt_question(
+                                    bot,
+                                    msg,
                                     &gpt_parameters,
                                 )
                                 .await
-                            } else {
+                            }
+                            text if message_has_url(
+                                &mention_parameters.url_regex,
+                                text,
+                                media_text,
+                            ) =>
+                            {
+                                url_summary_handler::handle_url_summary(
+                                    bot,
+                                    msg,
+                                    mention_parameters.url_regex.clone(),
+                                    &gpt_parameters,
+                                )
+                                .await
+                            }
+                            text if mention_parameters.rust_regex.is_match(text) => {
+                                rust_mention_handler::handle_rust_matched_mention(
+                                    bot,
+                                    msg,
+                                    db_pool,
+                                    mention_parameters.req_time_diff,
+                                    mention_parameters.rust_chat_id,
+                                )
+                                .await
+                            }
+                            text if mention_parameters.blazing_fast_regex.is_match(text) => {
+                                bf_mention_handler::handle_bf_matched_mention(bot, msg).await;
                                 Ok(())
                             }
+                            text if mention_parameters.gayness_regex.is_match(text) => {
+                                gayness_handler::handle_gayness_mention(bot, msg).await;
+                                Ok(())
+                            }
+                            _ => {
+                                if let Some(reply_msg) = &msg.reply_to_message() {
+                                    chat_gpt_handler::handle_reply(
+                                        &bot,
+                                        &msg,
+                                        reply_msg,
+                                        &gpt_parameters,
+                                    )
+                                    .await
+                                } else {
+                                    Ok(())
+                                }
+                            }
                         }
-                    }
-                } else {
-                    Ok(())
-                };
+                    } else {
+                        Ok(())
+                    };
 
-                if let Err(err) = outcome {
-                    error!("message handler failed: {err}");
-                }
-
-                respond(())
-            },
-        ),
+                    log_outcome(outcome)
+                },
+            )),
     )
 }
 
@@ -187,10 +221,16 @@ pub async fn run(deps: AppDeps) -> anyhow::Result<()> {
         db_pool,
         gpt_parameters,
         mention_parameters,
+        hn_digest_parameters,
     } = deps;
     let handler = build_handler();
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![mention_parameters, db_pool, gpt_parameters])
+        .dependencies(dptree::deps![
+            mention_parameters,
+            db_pool,
+            gpt_parameters,
+            hn_digest_parameters
+        ])
         .error_handler(LoggingErrorHandler::with_custom_text(
             "An error has occurred in the dispatcher",
         ))

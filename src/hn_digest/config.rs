@@ -3,8 +3,8 @@ use log::warn;
 use teloxide::types::ChatId;
 
 pub const DEFAULT_HN_API_BASE_URL: &str = "https://hacker-news.firebaseio.com/v0";
-const DEFAULT_TOP_N: usize = 3;
-const MAX_TOP_N: usize = 10;
+pub(crate) const DEFAULT_TOP_N: usize = 3;
+pub(crate) const MAX_TOP_N: usize = 10;
 const DEFAULT_HOUR_UTC: u32 = 17;
 
 #[derive(Debug, Clone)]
@@ -13,7 +13,6 @@ pub struct HnDigestConfig {
     pub time_utc: NaiveTime,
     pub top_n: usize,
     pub run_on_startup: bool,
-    pub hn_api_base_url: String,
 }
 
 impl HnDigestConfig {
@@ -33,7 +32,6 @@ impl HnDigestConfig {
             time_utc: parse_time(lookup("HN_DIGEST_TIME_UTC")),
             top_n: parse_top_n(lookup("HN_DIGEST_TOP_N")),
             run_on_startup: parse_flag(lookup("HN_DIGEST_RUN_ON_STARTUP")),
-            hn_api_base_url: DEFAULT_HN_API_BASE_URL.to_owned(),
         })
     }
 }
@@ -119,7 +117,6 @@ mod tests {
         assert_eq!(config.time_utc, NaiveTime::from_hms_opt(17, 0, 0).unwrap());
         assert_eq!(config.top_n, 3);
         assert!(!config.run_on_startup);
-        assert_eq!(config.hn_api_base_url, DEFAULT_HN_API_BASE_URL);
     }
 
     #[test]

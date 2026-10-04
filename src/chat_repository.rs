@@ -2,7 +2,10 @@ use crate::chat_gpt_handler::BotProfile;
 use crate::gpt_service::ChatMessage;
 use log::info;
 use redis::aio::ConnectionManager;
-use redis::{AsyncCommands, FromRedisValue, RedisResult, RedisWrite, ToRedisArgs, Value};
+use redis::{
+    AsyncCommands, ExistenceCheck, FromRedisValue, RedisResult, RedisWrite, SetExpiry, SetOptions,
+    ToRedisArgs, Value,
+};
 use tokio::io;
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
@@ -15,6 +18,21 @@ pub async fn get_bot_context(
 ) -> RedisResult<Vec<ChatMessage>> {
     info!("fetching  chat bot context for context_key: {}", key);
     timeout_cmd(connection_manager.lrange(key, 0, 11)).await
+}
+
+/// `SET key 1 NX EX ttl`: `true` when the key was absent and is now set for
+/// `ttl`, `false` when it already exists.
+pub async fn set_if_absent(
+    connection_manager: &mut ConnectionManager,
+    key: &str,
+    ttl: Duration,
+) -> RedisResult<bool> {
+    let options = SetOptions::default()
+        .conditional_set(ExistenceCheck::NX)
+        .with_expiration(SetExpiry::EX(ttl.as_secs() as usize));
+    let reply: Option<String> =
+        timeout_cmd(connection_manager.set_options(key, 1, options)).await?;
+    Ok(reply.is_some())
 }
 
 /// Serialize a value for storage in Redis. Serialization of these plain,

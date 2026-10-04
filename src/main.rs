@@ -1,6 +1,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::env;
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -8,9 +9,10 @@ use log::{error, info, warn};
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use teloxide::prelude::*;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use rust_bot::hn_digest::{self, HnDigestConfig};
+use rust_bot::hn_digest::{self, HnDigestConfig, HnDigestParameters};
 use rust_bot::{AppDeps, GptParameters, MentionParameters, DEFAULT_OPENAI_BASE_URL};
 
 #[tokio::main]
@@ -37,28 +39,45 @@ async fn main() -> anyhow::Result<()> {
         redis_connection_manager,
     };
 
-    let shutdown = CancellationToken::new();
+    let hn_digest_parameters = HnDigestParameters::default();
     let hn_digest_task = match HnDigestConfig::from_env() {
         Some(config) => Some(hn_digest::spawn_scheduler(
             bot.clone(),
             gpt_parameters.clone(),
+            hn_digest_parameters.clone(),
             config,
-            shutdown.clone(),
         )),
         None => {
             info!("HN digest disabled: HN_DIGEST_CHAT_IDS is not set");
             None
         }
     };
+    let shutdown = hn_digest_parameters.shutdown.clone();
+    let command_tasks = hn_digest_parameters.command_tasks.clone();
 
     let deps = AppDeps {
         bot,
         db_pool,
         gpt_parameters,
         mention_parameters: MentionParameters::default(),
+        hn_digest_parameters,
     };
 
-    let bot_run = rust_bot::run(deps);
+    let result = serve(rust_bot::run(deps), hn_digest_task, &shutdown).await;
+
+    // In-flight `/hn` digests are cancelled too; wait for them to wind down.
+    shutdown.cancel();
+    command_tasks.close();
+    command_tasks.wait().await;
+    result
+}
+
+/// Serve chats until the dispatcher stops, supervising the scheduler task.
+async fn serve(
+    bot_run: impl Future<Output = anyhow::Result<()>>,
+    hn_digest_task: Option<JoinHandle<()>>,
+    shutdown: &CancellationToken,
+) -> anyhow::Result<()> {
     let Some(mut hn_digest_task) = hn_digest_task else {
         return bot_run.await;
     };
