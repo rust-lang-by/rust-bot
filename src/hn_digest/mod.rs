@@ -12,9 +12,12 @@ use chrono::{DateTime, Days, NaiveTime, Utc};
 use log::{error, info, warn};
 use message::DigestEntry;
 use std::future::Future;
+use std::time::Duration;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 use tokio::task::JoinHandle;
+
+const PAUSE_BETWEEN_MESSAGES: Duration = Duration::from_secs(1);
 
 pub fn spawn_scheduler(bot: Bot, gpt: GptParameters, config: HnDigestConfig) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -134,7 +137,11 @@ async fn summarize_story(gpt: &GptParameters, base_url: &str, id: u64) -> Attemp
 }
 
 async fn post_to_chat(bot: &Bot, chat_id: ChatId, messages: &[String]) {
-    for message in messages {
+    for (index, message) in messages.iter().enumerate() {
+        // Telegram rate-limits bursts into one chat (~20 msg/min in groups).
+        if index > 0 {
+            tokio::time::sleep(PAUSE_BETWEEN_MESSAGES).await;
+        }
         if let Err(err) = bot
             .send_message(chat_id, message)
             .parse_mode(ParseMode::Html)
