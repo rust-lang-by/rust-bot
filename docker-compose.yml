@@ -9,6 +9,10 @@ services:
       - CHAT_GPT_API_TOKEN=gpt-token
       - DATABASE_URL=postgresql://docker:password@postgres:5432/postgres
       - REDIS_URL=redis://default:redispw@localhost:6379
+      - HN_DIGEST_CHAT_IDS=${HN_DIGEST_CHAT_IDS:-}
+      - HN_DIGEST_TIME_UTC=${HN_DIGEST_TIME_UTC:-17:00}
+      - HN_DIGEST_TOP_N=${HN_DIGEST_TOP_N:-3}
+      - HN_DIGEST_RUN_ON_STARTUP=${HN_DIGEST_RUN_ON_STARTUP:-false}
     depends_on:
       - postgres
       - redis

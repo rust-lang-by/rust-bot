@@ -9,6 +9,7 @@ use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use teloxide::prelude::*;
 
+use rust_bot::hn_digest::{self, HnDigestConfig};
 use rust_bot::{AppDeps, GptParameters, MentionParameters, DEFAULT_OPENAI_BASE_URL};
 
 #[tokio::main]
@@ -34,6 +35,13 @@ async fn main() -> anyhow::Result<()> {
         http_client: reqwest::Client::new(),
         redis_connection_manager,
     };
+
+    match HnDigestConfig::from_env() {
+        Some(config) => {
+            hn_digest::spawn_scheduler(bot.clone(), gpt_parameters.clone(), config);
+        }
+        None => info!("HN digest disabled: HN_DIGEST_CHAT_IDS is not set"),
+    }
 
     let deps = AppDeps {
         bot,

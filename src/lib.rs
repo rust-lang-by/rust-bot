@@ -13,6 +13,7 @@ pub mod chat_repository;
 pub mod error;
 pub mod gayness_handler;
 pub mod gpt_service;
+pub mod hn_digest;
 pub mod mention_repository;
 pub mod rust_mention_handler;
 pub mod url_summary_handler;
