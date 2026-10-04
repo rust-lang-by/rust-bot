@@ -5,6 +5,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod article_summary;
 pub mod bf_mention_handler;
 pub mod boot;
 pub mod chat_gpt_handler;

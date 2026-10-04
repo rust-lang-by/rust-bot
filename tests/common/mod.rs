@@ -152,6 +152,17 @@ pub async fn spawn_openai(canned_reply: &str) -> (MockServer, String) {
     (server, base_url)
 }
 
+pub async fn spawn_openai_failing() -> (MockServer, String) {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let base_url = format!("{}/v1/chat/completions", server.uri());
+    (server, base_url)
+}
+
 pub fn gpt_parameters(redis: ConnectionManager, openai_base_url: String) -> GptParameters {
     GptParameters {
         chat_gpt_api_token: Arc::from("test-openai-token"),

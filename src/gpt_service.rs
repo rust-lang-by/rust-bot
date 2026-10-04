@@ -1,7 +1,7 @@
-use log::{error, info};
+use log::info;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::time::Duration;
-use teloxide::types::ChatId;
 
 use crate::{AppError, GptParameters};
 
@@ -38,35 +38,36 @@ pub struct ChatMessage {
     pub content: String,
 }
 
-pub async fn chat_gpt_call(
-    params: &GptParameters,
-    chat_id: ChatId,
-    messages: Vec<ChatMessage>,
-) -> ChatMessage {
-    let fallback = || ChatMessage {
+/// The in-character reply chat handlers send when the LLM is unavailable.
+pub fn busy_fallback() -> ChatMessage {
+    ChatMessage {
         role: ChatMessageRole::Assistant,
         content: "Братан, давай папазжей, занят сейчас.".to_owned(),
-    };
-    match gpt_call(params, chat_id, messages).await {
-        Ok(choices) => choices
-            .into_iter()
-            .next()
-            .map_or_else(fallback, |choice| choice.message),
-        Err(err) => {
-            error!("Can't execute chat_gpt_call: {}", err);
-            fallback()
-        }
     }
+}
+
+/// `requester` identifies the caller in logs (a chat id, an article url, ...).
+pub async fn chat_gpt_call(
+    params: &GptParameters,
+    requester: impl Display,
+    messages: Vec<ChatMessage>,
+) -> Result<ChatMessage, AppError> {
+    gpt_call(params, &requester, messages)
+        .await?
+        .into_iter()
+        .next()
+        .map(|choice| choice.message)
+        .ok_or_else(|| AppError::Gpt(format!("empty choices in response for {requester}")))
 }
 
 async fn gpt_call(
     params: &GptParameters,
-    chat_id: ChatId,
+    requester: &impl Display,
     messages: Vec<ChatMessage>,
 ) -> Result<Vec<Choice>, AppError> {
     info!(
-        "gpt call invocation from chat_id: {} with context: {:#?}",
-        chat_id, messages
+        "gpt call invocation from {} with context: {:#?}",
+        requester, messages
     );
     let chat_request = ChatRequest {
         messages,
@@ -87,6 +88,6 @@ async fn gpt_call(
         .await?
         .json::<ChatResponse>()
         .await?;
-    info!("gpt call invocation for chat_id {} completed", chat_id);
+    info!("gpt call invocation for {} completed", requester);
     Ok(response.choices)
 }

@@ -90,7 +90,7 @@ pub async fn handle_chat_gpt_question(
     )
     .await;
 
-    let gpt_response_message = gpt_service::chat_gpt_call(gpt_parameters, chat_id, context).await;
+    let gpt_response_message = gpt_reply_or_fallback(gpt_parameters, chat_id, context).await;
     let bot_reply_msg_response = send_gpt_reply(
         &bot,
         chat_id,
@@ -110,6 +110,21 @@ pub async fn handle_chat_gpt_question(
     )
     .await;
     Ok(())
+}
+
+/// LLM failures surface as the bot's in-character "busy" reply, which is sent
+/// and stored in context like any other answer.
+async fn gpt_reply_or_fallback(
+    gpt_parameters: &GptParameters,
+    chat_id: ChatId,
+    context: Vec<ChatMessage>,
+) -> ChatMessage {
+    gpt_service::chat_gpt_call(gpt_parameters, chat_id, context)
+        .await
+        .unwrap_or_else(|err| {
+            error!("Can't execute chat_gpt_call for chat_id {chat_id}: {err}");
+            gpt_service::busy_fallback()
+        })
 }
 
 /// Pick the bot profile whose mention regex matches the message, falling back
@@ -254,7 +269,7 @@ pub async fn handle_reply(
     )
     .await;
 
-    let gpt_response_message = gpt_service::chat_gpt_call(gpt_parameters, chat_id, context).await;
+    let gpt_response_message = gpt_reply_or_fallback(gpt_parameters, chat_id, context).await;
     let bot_reply_msg_response = bot
         .send_message(chat_id, &gpt_response_message.content)
         .reply_parameters(ReplyParameters::new(msg.id))

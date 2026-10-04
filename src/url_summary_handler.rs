@@ -1,18 +1,12 @@
-use crate::gpt_service::ChatMessage;
-use crate::gpt_service::ChatMessageRole::{System, User};
+use crate::article_summary::{self, ArticleSummaryError};
 use crate::{gpt_service, AppError, GptParameters};
-use log::{info, warn};
+use log::{error, info, warn};
 use regex::Regex;
-use reqwest::Client;
-use std::time::Duration;
 use teloxide::prelude::*;
 use teloxide::types::MediaKind::Text;
 use teloxide::types::MessageEntityKind::TextLink;
 use teloxide::types::MessageKind::Common;
 use teloxide::types::{MediaText, MessageCommon, ReplyParameters};
-
-const ARTICLE_EXTRACTION_TIMEOUT: Duration = Duration::from_secs(30);
-const ARTICLE_SUMMARY_SYSTEM_CONTEXT: &str = "Проанализируй статью и дай краткое содержание. Применяй юмор в анализе. Ответ должен быть структурированным, разбитым на пункты и содержать максимум 300 симвалов.";
 
 pub async fn handle_url_summary(
     bot: Bot,
@@ -43,14 +37,23 @@ pub async fn handle_url_summary(
         return Ok(());
     };
 
-    let content = get_content_call(&gpt_parameters.http_client, &url).await?;
-    let clean_content = html2text::from_read(content.as_bytes(), 120)
-        .map_err(|err| AppError::BadInput(format!("failed to parse article HTML: {err}")))?;
-    // Check if the content is long enough to summarize
-    if clean_content.len() < 1000 {
-        return Ok(());
-    }
-    let summary = get_gpt_summary(gpt_parameters, chat_id, clean_content).await;
+    let summary = match article_summary::summarize_article(gpt_parameters, &url).await {
+        Ok(summary) => summary,
+        Err(err @ (ArticleSummaryError::TooShort(_) | ArticleSummaryError::NotHtml(_))) => {
+            info!("Skipping url summary for chat_id {chat_id}: {err}");
+            return Ok(());
+        }
+        Err(ArticleSummaryError::Llm(err)) => {
+            error!("Can't summarize article for chat_id {chat_id}: {err}");
+            gpt_service::busy_fallback().content
+        }
+        Err(ArticleSummaryError::Fetch(err)) => return Err(err.into()),
+        Err(ArticleSummaryError::Parse(err)) => {
+            return Err(AppError::BadInput(format!(
+                "failed to parse article HTML: {err}"
+            )))
+        }
+    };
 
     let reply_msg = bot
         .send_message(chat_id, format!("TLDR:\n{}", summary))
@@ -82,31 +85,4 @@ fn find_link(media_text: &MediaText) -> Option<String> {
             }
         })
         .find_map(|el| el)
-}
-
-async fn get_content_call(client: &Client, url: &str) -> Result<String, AppError> {
-    let response = client
-        .get(url)
-        .timeout(ARTICLE_EXTRACTION_TIMEOUT)
-        .send()
-        .await?
-        .text()
-        .await?;
-    Ok(response)
-}
-
-pub async fn get_gpt_summary(params: &GptParameters, chat_id: ChatId, message: String) -> String {
-    let system_message = ChatMessage {
-        role: System,
-        content: ARTICLE_SUMMARY_SYSTEM_CONTEXT.to_string(),
-    };
-    let content_message = ChatMessage {
-        role: User,
-        content: message,
-    };
-
-    let context = Vec::from([system_message, content_message]);
-    gpt_service::chat_gpt_call(params, chat_id, context)
-        .await
-        .content
 }
