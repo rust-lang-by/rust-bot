@@ -7,7 +7,7 @@ use redis::aio::ConnectionManager;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use teloxide::prelude::*;
-use teloxide::types::Update;
+use teloxide::types::{Me, Update};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::ContainerAsync;
 use testcontainers_modules::postgres::Postgres;
@@ -19,6 +19,7 @@ use rust_bot::hn_digest::HnDigestParameters;
 use rust_bot::{build_handler, GptParameters, MentionParameters};
 
 pub const TEST_BOT_TOKEN: &str = "test-token";
+pub const TEST_BOT_USERNAME: &str = "rust_by_bot";
 
 pub struct PostgresHarness {
     pub _container: ContainerAsync<Postgres>,
@@ -284,7 +285,8 @@ pub async fn dispatch_one_with_hn(
         mention_parameters,
         pool,
         gpt_parameters,
-        hn_digest_parameters
+        hn_digest_parameters,
+        bot_me()
     ];
     let outcome = tokio::time::timeout(Duration::from_secs(15), handler.dispatch(deps))
         .await
@@ -293,6 +295,21 @@ pub async fn dispatch_one_with_hn(
         matches!(outcome, ControlFlow::Break(Ok(()))),
         "dispatcher did not route to a handler: outcome={outcome:?}"
     );
+}
+
+/// The real dispatcher inserts `Me` from `getMe` on start; command routing
+/// (`filter_command`) needs it to tell `/hn@this_bot` from `/hn@other_bot`.
+fn bot_me() -> Me {
+    let me = json!({
+        "id": 1,
+        "is_bot": true,
+        "first_name": "TestBot",
+        "username": TEST_BOT_USERNAME,
+        "can_join_groups": true,
+        "can_read_all_group_messages": true,
+        "supports_inline_queries": false
+    });
+    serde_json::from_str(&me.to_string()).expect("build Me")
 }
 
 fn default_message_response() -> Value {

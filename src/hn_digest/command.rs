@@ -1,68 +1,48 @@
 use super::config::{DEFAULT_TOP_N, MAX_TOP_N};
 use super::{build_digest, send_digest, HnDigestParameters};
-use crate::boot::compile_regex;
 use crate::{AppError, GptParameters};
 use log::{info, warn};
-use regex::Regex;
-use std::sync::LazyLock;
 use teloxide::prelude::*;
 use teloxide::types::ChatAction;
-
-// Telegram only recognises `/hn_digest` as a command (no `-` allowed), but the
-// hyphenated spelling is accepted as plain text too. `@botname` is appended by
-// clients when the command is picked from the menu in groups.
-static HN_DIGEST_COMMAND_RE: LazyLock<Regex> =
-    LazyLock::new(|| compile_regex(r"(?is)^/hn[_-]digest(?:@\w+)?(?:\s+(.*?))?\s*$"));
+use teloxide::utils::command::BotCommands;
 
 const FAILURE_REPLY: &str = "Не получилось собрать HN дайджест, попробуй позже.";
 
-#[derive(Debug, PartialEq)]
-enum HnDigestCommand {
-    Run(usize),
-    Usage,
+#[derive(BotCommands, Clone, Debug, PartialEq)]
+#[command(rename_rule = "lowercase")]
+pub enum Command {
+    /// The count stays a raw string so a bare `/hn` and a bad count can be
+    /// answered with the default and a usage hint instead of being ignored.
+    #[command(description = "Hacker News digest: /hn [1-10], 3 by default.")]
+    Hn(String),
 }
 
-pub fn is_hn_digest_command(text: &str) -> bool {
-    parse_command(text).is_some()
-}
-
-fn parse_command(text: &str) -> Option<HnDigestCommand> {
-    let captures = HN_DIGEST_COMMAND_RE.captures(text.trim())?;
-    let Some(arg) = captures
-        .get(1)
-        .map(|arg| arg.as_str().trim())
-        .filter(|arg| !arg.is_empty())
-    else {
-        return Some(HnDigestCommand::Run(DEFAULT_TOP_N));
-    };
-    match arg.parse::<usize>() {
-        Ok(n) if (1..=MAX_TOP_N).contains(&n) => Some(HnDigestCommand::Run(n)),
-        _ => Some(HnDigestCommand::Usage),
+fn parse_count(arg: &str) -> Option<usize> {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        return Some(DEFAULT_TOP_N);
     }
+    arg.parse().ok().filter(|n| (1..=MAX_TOP_N).contains(n))
 }
 
 fn usage_reply() -> String {
-    format!("Использование: /hn_digest [1-{MAX_TOP_N}], по умолчанию {DEFAULT_TOP_N}.")
+    format!("Использование: /hn [1-{MAX_TOP_N}], по умолчанию {DEFAULT_TOP_N}.")
 }
 
 /// Runs inline in the dispatcher, so the chat waits for the whole digest
 /// (fetch + summary per story) before the bot handles its next message.
-pub async fn handle_hn_digest_command(
+pub async fn handle_command(
     bot: Bot,
     msg: Message,
+    command: Command,
     gpt_parameters: &GptParameters,
     hn_digest_parameters: &HnDigestParameters,
 ) -> Result<(), AppError> {
-    let Some(command) = msg.text().and_then(parse_command) else {
-        return Ok(());
-    };
+    let Command::Hn(arg) = command;
     let chat_id = msg.chat.id;
-    let top_n = match command {
-        HnDigestCommand::Usage => {
-            send_digest(&bot, chat_id, Some(msg.id), msg.thread_id, &[usage_reply()]).await?;
-            return Ok(());
-        }
-        HnDigestCommand::Run(top_n) => top_n,
+    let Some(top_n) = parse_count(&arg) else {
+        send_digest(&bot, chat_id, Some(msg.id), msg.thread_id, &[usage_reply()]).await?;
+        return Ok(());
     };
     info!("HN digest command: chat_id {chat_id}, top {top_n}");
 
@@ -90,56 +70,51 @@ pub async fn handle_hn_digest_command(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use HnDigestCommand::{Run, Usage};
 
-    #[test]
-    fn bare_command_uses_default_count() {
-        assert_eq!(parse_command("/hn_digest"), Some(Run(DEFAULT_TOP_N)));
-        assert_eq!(parse_command("  /hn_digest  "), Some(Run(DEFAULT_TOP_N)));
+    const BOT: &str = "rust_by_bot";
+
+    fn parse(text: &str) -> Option<Command> {
+        Command::parse(text, BOT).ok()
     }
 
     #[test]
-    fn explicit_count_is_used() {
-        assert_eq!(parse_command("/hn_digest 5"), Some(Run(5)));
-        assert_eq!(parse_command("/hn_digest 1"), Some(Run(1)));
-        assert_eq!(parse_command("/hn_digest 10"), Some(Run(10)));
-    }
-
-    #[test]
-    fn spelling_variants_are_accepted() {
-        assert_eq!(parse_command("/hn-digest 2"), Some(Run(2)));
-        assert_eq!(parse_command("/HN_Digest"), Some(Run(DEFAULT_TOP_N)));
-        assert_eq!(parse_command("/hn_digest@rust_by_bot 4"), Some(Run(4)));
-        assert_eq!(
-            parse_command("/hn_digest@rust_by_bot"),
-            Some(Run(DEFAULT_TOP_N))
-        );
-    }
-
-    #[test]
-    fn invalid_count_asks_for_usage() {
-        for text in [
-            "/hn_digest 0",
-            "/hn_digest 11",
-            "/hn_digest -1",
-            "/hn_digest five",
-            "/hn_digest 2 3",
-        ] {
-            assert_eq!(parse_command(text), Some(Usage), "{text}");
-        }
+    fn command_is_recognised() {
+        assert_eq!(parse("/hn"), Some(Command::Hn(String::new())));
+        assert_eq!(parse("/hn 5"), Some(Command::Hn("5".into())));
+        assert_eq!(parse("/hn@rust_by_bot 4"), Some(Command::Hn("4".into())));
     }
 
     #[test]
     fn other_text_is_not_the_command() {
         for text in [
-            "hn_digest",
-            "please run /hn_digest",
-            "/hn_digestfoo",
-            "/hn",
-            "/hn digest",
+            "hn",
+            "please run /hn",
+            "/hnx",
+            "/hn@other_bot 2",
+            "/hn_digest",
             "",
         ] {
-            assert_eq!(parse_command(text), None, "{text}");
+            assert_eq!(parse(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn missing_count_uses_default() {
+        assert_eq!(parse_count(""), Some(DEFAULT_TOP_N));
+        assert_eq!(parse_count("  "), Some(DEFAULT_TOP_N));
+    }
+
+    #[test]
+    fn count_in_range_is_used() {
+        assert_eq!(parse_count("1"), Some(1));
+        assert_eq!(parse_count(" 5 "), Some(5));
+        assert_eq!(parse_count("10"), Some(10));
+    }
+
+    #[test]
+    fn invalid_count_is_rejected() {
+        for arg in ["0", "11", "-1", "five", "2 3"] {
+            assert_eq!(parse_count(arg), None, "{arg}");
         }
     }
 

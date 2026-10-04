@@ -6,7 +6,7 @@ mod config;
 mod hn_api;
 mod message;
 
-pub use command::{handle_hn_digest_command, is_hn_digest_command};
+pub use command::{handle_command, Command};
 pub use config::{HnDigestConfig, DEFAULT_HN_API_BASE_URL};
 
 use crate::{article_summary, GptParameters};
@@ -25,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 
 const PAUSE_BETWEEN_MESSAGES: Duration = Duration::from_secs(1);
 
-/// Dispatcher dependency for the `/hn_digest` command; independent of
+/// Dispatcher dependency for the `/hn` command; independent of
 /// [`HnDigestConfig`] so the command works with the scheduler disabled.
 #[derive(Clone)]
 pub struct HnDigestParameters {
