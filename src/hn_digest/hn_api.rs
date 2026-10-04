@@ -37,14 +37,21 @@ impl HnItem {
         if self.dead || self.deleted || self.kind.as_deref() != Some("story") {
             return None;
         }
+        let url = self.url.filter(|url| is_web_url(url))?;
         Some(HnStory {
             id: self.id,
             title: self.title?,
-            url: self.url?,
+            url,
             score: self.score,
             comments: self.descendants,
         })
     }
+}
+
+// The url ends up both fetched by the bot and in a Telegram `href`, so only
+// plain web links qualify (no `javascript:`, `file:`, `tg:` ...).
+fn is_web_url(url: &str) -> bool {
+    reqwest::Url::parse(url).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
 }
 
 pub async fn top_story_ids(client: &Client, base_url: &str) -> Result<Vec<u64>, reqwest::Error> {
@@ -120,6 +127,9 @@ mod tests {
             json!({"id": 2, "type": "job", "title": "Hiring", "url": "https://e.com"}),
             json!({"id": 3, "type": "story", "title": "T", "url": "https://e.com", "dead": true}),
             json!({"id": 4, "type": "story", "deleted": true}),
+            json!({"id": 5, "type": "story", "title": "T", "url": "javascript:alert(1)"}),
+            json!({"id": 6, "type": "story", "title": "T", "url": "file:///etc/passwd"}),
+            json!({"id": 7, "type": "story", "title": "T", "url": "not a url"}),
         ];
         for value in rejected {
             assert!(item(value.clone()).into_linked_story().is_none(), "{value}");
